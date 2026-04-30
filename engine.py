@@ -6,6 +6,13 @@ import openmeteo_requests
 from retry_requests import retry
 from openai import OpenAI  # Once you add the AI
 from dotenv import load_dotenv
+from pathlib import Path
+
+# This finds the folder where engine.py lives
+env_path = Path(__file__).parent / ".env"
+
+# This forces it to load THAT specific file
+load_dotenv(dotenv_path=env_path)
 
 # 1. SETUP OPEN-METEO
 cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
@@ -86,8 +93,53 @@ def fetch_tide_data(station_id):
         print(f"Tide API Timeout or Error: {e}")
     return []
 
+async def get_ai_recommendation(report, user_weight):
+    api_key = os.getenv("OPENROUTER_KEY")
+    
+    if not api_key:
+        return "The Legend is searching for his keys... (API Key Missing)"
+
+    # 3. Force the client to use your key
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key, 
+    )
+    # Initialize the OpenRouter client
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.getenv("OPENROUTER_KEY"),
+    )
+
+    prompt = f"""
+    You are a salty, experienced local windsurfing legend at {report['metadata']['spot_name']}. 
+    Based on the data below, give a 2-sentence recommendation for a session.
+    Mention if you are assuming they are {user_weight}kg
+    
+    USER PROFILE:
+    - Rider Weight: {user_weight}kg (Advice must be tailored to this weight!)
+    GEAR KNOWLEDGE BASE:
+    - Use standard physics: A {user_weight}kg rider needs more/less power than a 75kg average.
+    Current Conditions:
+    - Wind: {report['live']['wind_knots']} kts from {report['live']['wind_dir']} ({report['live']['wind_trend']})
+    - Waves: {report['live']['waves_m']}m
+    - Tides: {report['metadata']['tide_summary']}
+    - Local Wisdom: {report['local_knowledge']}
+    
+    Tone: Short, blunt, use emojis, and tell them exactly what sail size, fin size and board to grab!
+    """
+
+    try:
+        completion = client.chat.completions.create(
+            model="meta-llama/llama-3.2-1b-instruct", # Ultra cheap and fast
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return completion.choices[0].message.content
+    except Exception as e:
+        print(f"AI Error: {e}")
+        return "⚠️ Legend is offline. Wind looks good though, just get out there!"
+
 # 5. THE MASTER LOGIC (Consolidated)
-async def get_shred_report(spot_key: str):
+async def get_shred_report(spot_key: str, user_weight:str = "75"):
     spot = SPOTS.get(spot_key)
     if not spot:
         return None
@@ -138,33 +190,47 @@ async def get_shred_report(spot_key: str):
 
     # 4. Process Tides
     tide_list = []
-    for event in tides:
-        event_time = arrow.get(event['DateTime']).to('Europe/London')
-        tide_list.append({
-            "time": event_time.format('HH:mm'),
-            "type": "HIGH" if "High" in event['EventType'] else "LOW",
-            "height": round(event['Height'], 1)
-        })
-
-    # 5. Local Knowledge
-    wisdom = "No local knowledge found."
-    folder = "spotbot_knowledge"
+    tide_state = "Tide info unavailable"  # <--- ADD THIS DEFAULT LINE HERE
     
-    # Create the folder if it's missing to prevent path errors
-    if not os.path.exists(folder):
-        os.makedirs(folder)
+    if tides:  # Only run this if we actually got data from the API
+        for event in tides:
+            event_time = arrow.get(event['DateTime']).to('Europe/London')
+            tide_list.append({
+                "date": event_time.format('MMM DD'), # Added this (e.g., 'Apr 30')
+                "day": event_time.format('ddd'),     # Added this (e.g., 'Thu')
+                "time": event_time.format('HH:mm'),
+                "type": "HIGH" if "High" in event['EventType'] else "LOW",
+                "height": round(event['Height'], 1)
+            })
         
-    path = f"{folder}/{spot['knowledge_file']}"
-    if os.path.exists(path):
+        # Now define the state based on the first upcoming event
+        if tide_list:
+            next_event = tide_list[0]
+            tide_state = f"Heading to {next_event['type']}"
+
+    # --- engine.py Section 5 ---
+    wisdom = "No local knowledge found."
+    # Use Path for more reliable directory management
+    base_folder = Path(__file__).parent / "spotbot_knowledge" / "spots"
+
+    # Use the filename from your spot dictionary
+    path = base_folder / spot['knowledge_file']
+
+    if path.exists():
         try:
-            with open(path, 'r') as f:
-                wisdom = f.read()[:500]
+            wisdom = path.read_text(encoding='utf-8')[:500]
         except Exception as e:
             print(f"File Read Error: {e}")
+    else:
+        print(f"DEBUG: Wisdom file not found at {path.absolute()}")
 
     # 6. Return everything
-    return {
-        "metadata": {"spot_name": spot['name'], "status": desc},
+    report_data = {
+        "metadata": {
+            "spot_name": spot['name'], 
+            "status": desc,
+            "tide_summary": tide_state
+        },
         "live": {
             "wind_knots": round(wind, 1),
             "wind_dir": dir_info['word'],
@@ -172,9 +238,14 @@ async def get_shred_report(spot_key: str):
             "wind_trend": trend_icon,
             "gusts_knots": round(gust, 1),
             "waves_m": round(wave_h, 1),
-            "vibe": get_vibe(wind)
+            "vibe": "Thinking..." # Temporary
         },
-        "forecast_6h": trend,  # Now 'trend' is defined!
+        "forecast_6h": trend,
         "tides": tide_list,
         "local_knowledge": wisdom
     }
+
+    # 🔥 CALL THE AI BRAIN
+    report_data['live']['vibe'] = await get_ai_recommendation(report_data, user_weight)
+
+    return report_data

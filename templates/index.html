@@ -22,6 +22,8 @@
                     <option value="portland_harbour">Portland Harbour</option>
                 </select>
             </div>
+            <label for="weight">Your Weight (kg):</label>
+            <input type="number" id="weight" name="weight" value="{{ user_weight }}"" min="30" max="150">
             <div class="col-auto">
                 <button type="submit" class="btn btn-primary">Get Shred Report</button>
             </div>
@@ -91,12 +93,26 @@
                 <hr>
                 <ul class="list-unstyled">
                     {% for tide in report.tides %}
-                    <li class="mb-2">
-                        <strong>{{ tide.time }}</strong> | {{ tide.type }} | {{ tide.height }}m
+                    <li class="mb-2 d-flex justify-content-between align-items-center">
+                        <div>
+                            <!-- Matches "day" and "date" from your engine.py -->
+                            <span class="text-info" style="font-size: 0.85rem;">
+                                {{ tide.day }} {{ tide.date }}
+                            </span><br>
+                            <strong>{{ tide.time }}</strong>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge {{ 'bg-primary' if tide.type == 'HIGH' else 'bg-secondary' }}">
+                                {{ tide.type }}
+                            </span>
+                            <div class="small text-muted">{{ tide.height }}m</div>
+                        </div>
                     </li>
+                    <hr class="border-secondary my-1">
                     {% endfor %}
                 </ul>
             </div>
+        </div>
 
             <div class="card shred-card p-4 bg-secondary text-white">
                 <h4>📖 Local Knowledge</h4>
@@ -109,7 +125,7 @@
 </body>
 </html>
 <hr>
-<details>
+<!-- <details>
     <summary>View Raw Data (Debug)</summary>
     <pre>{{ report | tojson(indent=2) }}</pre>
-</details>
+</details> -->
