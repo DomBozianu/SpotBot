@@ -1,5 +1,6 @@
-OFFICIAL WINDSURF SAIL SIZE MATRIX (Reference 2026)
-### SECTION 1: SAIL SIZE MATRIX (sqm)
+OFFICIAL WINDSURF SESSION KNOWLEDGE BASE (v2.0)
+
+### SECTION 1: SAIL SIZE MATRIX (m²)
 | Rider Weight | 10–15 kts | 15–20 kts | 20–25 kts | 25–30 kts | 30+ kts  |
 |--------------|-----------|-----------|-----------|-----------|----------|
 | 55–65 kg     | 6.5–7.0m  | 5.5–6.0m  | 4.5–5.0m  | 3.7–4.2m  | 3.3–3.7m |
@@ -9,43 +10,27 @@ OFFICIAL WINDSURF SAIL SIZE MATRIX (Reference 2026)
 | 95kg+        | 8.5–9.5m  | 7.5–8.0m  | 6.5–7.0m  | 5.7–6.2m  | 5.0–5.5m |
 
 ### SECTION 2: BOARD SELECTION LOGIC (Liters)
+- BASELINE VOLUME: Suggested = (Rider Weight + 30L) for intermediate cruising.
+- HIGH WIND CONTROL: If Wind > 25 kts OR Waves > 1.0m, suggest (Weight + 0L to +10L).
+- THE SINKER LIMIT: Absolute minimum for experts is (Weight - 15L). 
+- SAFETY CRITICAL: Never suggest a board volume under 60L unless the rider is <50kg. A board volume (L) is NEVER a sail size (m²).
 
-STANDARD RULE: 
-- Suggested Volume = (Rider Weight + 30L) for general blasting and lighter winds.
+### SECTION 3: BEAUFORT & SEA STATE CONTEXT
+- F4 (11-16 kts): "Small Whitecaps." Good for big sails/foil.
+- F6 (22-27 kts): "Large Waves/Spray." Advanced gear only.
+- F8 (34-40 kts): "Gale Force." High danger. Only storm sails (3.5m-4.0m).
 
-HIGH WIND / WAVE EXCEPTION:
-- If Wind > 25 kts OR Waves > 1.0m: A heavy rider needs control over float. 
-- Suggest a "High Wind" board: (Rider Weight + 0L to +10L). 
-- EXAMPLE: A 95kg rider in 30kts should use a 95L-105L board, NOT their 130L light-wind board.
+### SECTION 4: 
+- WEED: If the local info says "Weedy," recommend an "Anti-Weed" (Raked) fin.
 
-CRITICAL PHYSICAL LIMIT:
-- NO human over 60kg can windsurf on an 8L board. That is a sinker for a dog. 
-- The ABSOLUTE MINIMUM board volume for any rider is (Rider Weight - 15L).
-- NEVER suggest a board volume under 75L unless the rider is a child.
-### SECTION 3: TERMINOLOGY 
-- Use "m²" or "meter sail" for sail sizes. Never use "width".
-- Use "L" or "Liters" for board volume.
+### SECTION 5: WETSUIT GUIDE
+- 19°C+: 2mm Shorty.
+- 14-18°C: 3/2mm Full Suit.
+- 10-13°C: 4/3mm or 5/4mm + Booties.
+- <10°C: 5/4mm Hooded + Gloves + Booties.
 
-BOARD VOLUME CALCULATION:
-- Beginner: Body Weight x 2 (or +100L reserve). Look for 80cm+ width and daggerboards.
-- Improver: Weight + 60L to 80L (learning harness).
-- Early Intermediate: Weight + 30L to 60L (learning footstraps/planing).
-- Advanced: Weight + 0L to 15L (sinker boards/wave sailing).
-
-### SECTION 4: SPECIALIST GEAR ARCHETYPES
-- THE SINKER (High Wind/Waves): Volume = (Weight - 10L to +5L). Only for 25kts+ and experienced riders.
-- THE SPEED NEEDLE: Volume = (Weight - 20L). Only for flat water speed runs (e.g., Portland Harbour).
-- THE LIGHT WIND FLOAT: Volume = (Weight + 50L to +100L). For sub-12kt cruising or beginners.
-
-### SECTION 5: REASONING GUARDRAIL
-- If the calculated Board Volume (L) is within 5 points of the Sail Size (m²), the calculation is likely a hallucination. 
-- Boards are almost ALWAYS > 60L. Sails are almost ALWAYS < 10.0m².
-
-SAIL TYPES & CHARACTERISTICS:
-- Freeride: Widest wind range (6-8 knots per size). Best for all-rounders.
-- Wave: Compact and reinforced. Generates less power per m² but is highly maneuverable.
-- Slalom/Race: Designed for top-end speed; harder to rig and less forgiving.
-
-SAFETY & CONDITIONS:
-- Wetsuits: 3/2mm for summer; 4/3mm or 5/4mm for spring/autumn.
-- Always use a PFD (Life Jacket) for vertical buoyancy during breaks.
+### SECTION 6: THE "SENDINESS" SCORE (1-10)
+- 1-3: "Paddling weather." Don't bother.
+- 4-6: "Getting there." Good for big kit/practice.
+- 7-9: "STOKE LEVEL HIGH." Ideal conditions for the spot.
+- 10: "Epic but Dangerous." Pros only.

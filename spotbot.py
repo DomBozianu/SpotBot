@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
-from engine import get_shred_report  # <-- This pulls from your new engine.py
+from engine import get_shred_report, SPOTS  # <-- This pulls from your new engine.py
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -20,9 +20,9 @@ async def home(request: Request):
     return templates.TemplateResponse(
         request=request, 
         name="index.html", 
-        context={"report": report_data, "user_weight": weight}
+        context={"report": report_data, "user_weight": weight, "all_spots": SPOTS}
     )
-    
+
 @app.get("/api/vibe")
 async def get_vibe_api(spot: str, weight: int):
     # This mimics the logic in your home route but returns JSON

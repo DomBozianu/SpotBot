@@ -1,0 +1,30 @@
+{
+    "portland_harbour": {
+        "name": "Portland Harbour",
+        "lat": 50.58,
+        "lon": -2.45,
+        "tide_id": "0033",
+        "knowledge_file": "portland_harbour.txt"
+    },
+    "gwithian": {
+        "name": "Gwithian",
+        "lat": 50.22,
+        "lon": -5.39,
+        "tide_id": "0547",
+        "knowledge_file": "gwithian.txt"
+    },
+    "kimmeridge_bay": {
+        "name": "Kimmeridge Bay",
+        "lat": 50.60,
+        "lon": -2.13,
+        "tide_id": "0035",
+        "knowledge_file": "kimmeridge_bay.txt"
+    },
+    "west_kirby": {
+        "name": "West Kirby",
+        "lat": 53.37,
+        "lon": -3.19,
+        "tide_id": "0451",
+        "knowledge_file": "west_kirby.txt"
+    }
+}
