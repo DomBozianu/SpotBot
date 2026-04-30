@@ -1,0 +1,51 @@
+OFFICIAL WINDSURF SAIL SIZE MATRIX (Reference 2026)
+### SECTION 1: SAIL SIZE MATRIX (sqm)
+| Rider Weight | 10–15 kts | 15–20 kts | 20–25 kts | 25–30 kts | 30+ kts  |
+|--------------|-----------|-----------|-----------|-----------|----------|
+| 55–65 kg     | 6.5–7.0m  | 5.5–6.0m  | 4.5–5.0m  | 3.7–4.2m  | 3.3–3.7m |
+| 65–75 kg     | 7.0–7.5m  | 6.0–6.5m  | 5.0–5.5m  | 4.2–4.7m  | 3.7–4.2m |
+| 75–85 kg     | 7.5–8.0m  | 6.5–7.0m  | 5.5–6.0m  | 4.7–5.3m  | 4.0–4.5m |
+| 85–95 kg     | 8.0–8.5m  | 7.0–7.5m  | 6.0–6.5m  | 5.3–5.7m  | 4.5–5.0m |
+| 95kg+        | 8.5–9.5m  | 7.5–8.0m  | 6.5–7.0m  | 5.7–6.2m  | 5.0–5.5m |
+
+### SECTION 2: BOARD SELECTION LOGIC (Liters)
+
+STANDARD RULE: 
+- Suggested Volume = (Rider Weight + 30L) for general blasting and lighter winds.
+
+HIGH WIND / WAVE EXCEPTION:
+- If Wind > 25 kts OR Waves > 1.0m: A heavy rider needs control over float. 
+- Suggest a "High Wind" board: (Rider Weight + 0L to +10L). 
+- EXAMPLE: A 95kg rider in 30kts should use a 95L-105L board, NOT their 130L light-wind board.
+
+CRITICAL PHYSICAL LIMIT:
+- NO human over 60kg can windsurf on an 8L board. That is a sinker for a dog. 
+- The ABSOLUTE MINIMUM board volume for any rider is (Rider Weight - 15L).
+- NEVER suggest a board volume under 75L unless the rider is a child.
+### SECTION 3: TERMINOLOGY 
+- Use "m²" or "meter sail" for sail sizes. Never use "width".
+- Use "L" or "Liters" for board volume.
+
+BOARD VOLUME CALCULATION:
+- Beginner: Body Weight x 2 (or +100L reserve). Look for 80cm+ width and daggerboards.
+- Improver: Weight + 60L to 80L (learning harness).
+- Early Intermediate: Weight + 30L to 60L (learning footstraps/planing).
+- Advanced: Weight + 0L to 15L (sinker boards/wave sailing).
+
+### SECTION 4: SPECIALIST GEAR ARCHETYPES
+- THE SINKER (High Wind/Waves): Volume = (Weight - 10L to +5L). Only for 25kts+ and experienced riders.
+- THE SPEED NEEDLE: Volume = (Weight - 20L). Only for flat water speed runs (e.g., Portland Harbour).
+- THE LIGHT WIND FLOAT: Volume = (Weight + 50L to +100L). For sub-12kt cruising or beginners.
+
+### SECTION 5: REASONING GUARDRAIL
+- If the calculated Board Volume (L) is within 5 points of the Sail Size (m²), the calculation is likely a hallucination. 
+- Boards are almost ALWAYS > 60L. Sails are almost ALWAYS < 10.0m².
+
+SAIL TYPES & CHARACTERISTICS:
+- Freeride: Widest wind range (6-8 knots per size). Best for all-rounders.
+- Wave: Compact and reinforced. Generates less power per m² but is highly maneuverable.
+- Slalom/Race: Designed for top-end speed; harder to rig and less forgiving.
+
+SAFETY & CONDITIONS:
+- Wetsuits: 3/2mm for summer; 4/3mm or 5/4mm for spring/autumn.
+- Always use a PFD (Life Jacket) for vertical buoyancy during breaks.

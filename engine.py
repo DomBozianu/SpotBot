@@ -4,7 +4,7 @@ import requests
 import requests_cache
 import openmeteo_requests
 from retry_requests import retry
-from openai import OpenAI  # Once you add the AI
+from openai import OpenAI, AsyncOpenAI  # Once you add the AI
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -13,7 +13,14 @@ env_path = Path(__file__).parent / ".env"
 
 # This forces it to load THAT specific file
 load_dotenv(dotenv_path=env_path)
-
+# Initialize the client HERE so all functions can see it
+# This is fast because it doesn't actually "connect" until the first request
+client = AsyncOpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_KEY"),
+    timeout=30.0, # Increase timeout to 20 seconds to prevent 504s
+    max_retries=2
+)
 # 1. SETUP OPEN-METEO
 cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
 retry_session = retry(cache_session, retries = 5)
@@ -94,49 +101,77 @@ def fetch_tide_data(station_id):
     return []
 
 async def get_ai_recommendation(report, user_weight):
-    api_key = os.getenv("OPENROUTER_KEY")
+    try:
+        # 1. Load Knowledge
+        from pathlib import Path
+        gear_path = Path(__file__).parent / "spotbot_knowledge" / "gear" / "windsurf_chart.txt"
+        gear_kb = gear_path.read_text(encoding='utf-8') if gear_path.exists() else "Use standard physics."
+
+        # 2. Safe Extraction
+        live = report.get('live', {})
+        tides_raw = report.get('tides', [])
+        
+        if isinstance(tides_raw, list) and len(tides_raw) > 0:
+            tide_val = str(tides_raw[0]) 
+        else:
+            tide_val = "Tide info unavailable"
+        
+        # Define all variables used in the prompt
+        wind_val = live.get('wind_knots', 'Unknown')
+        gust_val = live.get('gusts_knots', 'Unknown')
+        wave_val = live.get('wave_height', 'Flat')
+        wave_p   = live.get('wave_period', 'N/A') # ADDED THIS
+        spot_val = report.get('metadata', {}).get('spot_name', 'this spot')
+        wisdom   = report.get('local_knowledge', 'No local tips.')
+
+        # 3. Build the Prompt
+        prompt = f"""
+    You are the 'Local Legend Master' (LLM) the local windsurfing expert. You use physics and local grit to give gear advice.
     
-    if not api_key:
-        return "The Legend is searching for his keys... (API Key Missing)"
-
-    # 3. Force the client to use your key
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key, 
-    )
-    # Initialize the OpenRouter client
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPENROUTER_KEY"),
-    )
-
-    prompt = f"""
-    You are a salty, experienced local windsurfing legend at {report['metadata']['spot_name']}. 
-    Based on the data below, give a 2-sentence recommendation for a session.
-    Mention if you are assuming they are {user_weight}kg
+    GEAR KNOWLEDGE BASE:
+    {gear_kb}
+    
+    FULL FORECAST DATA:
+    - Spot: {spot_val}
+    - Wind: {wind_val} kts (Gusting {gust_val} kts)
+    - Waves: {wave_val}m at {wave_p}s
+    - Tide: {tide_val}
+    - Local Wisdom: {wisdom}
     
     USER PROFILE:
-    - Rider Weight: {user_weight}kg (Advice must be tailored to this weight!)
-    GEAR KNOWLEDGE BASE:
-    - Use standard physics: A {user_weight}kg rider needs more/less power than a 75kg average.
-    Current Conditions:
-    - Wind: {report['live']['wind_knots']} kts from {report['live']['wind_dir']} ({report['live']['wind_trend']})
-    - Waves: {report['live']['waves_m']}m
-    - Tides: {report['metadata']['tide_summary']}
-    - Local Wisdom: {report['local_knowledge']}
+    - Weight: {user_weight}kg
     
-    Tone: Short, blunt, use emojis, and tell them exactly what sail size, fin size and board to grab!
+    DECISION LOGIC:
+    1. Identify base sail size from Matrix for {user_weight}kg.
+    2. Assess 'Survival Factor': If gusts > 30kts or waves > 1.5m, suggest sizing down board volume (Weight + 0L to +10L).
+    3. Assessment for Speed: If flat water and high wind, mention a 'Speed Needle' (Weight - 15L) for experts.
+    4. CRITICAL: A board volume (L) is NEVER the same as a sail size (m2). If you suggest a 7.5L board, you are wrong. 
+    
+    TASK:
+    Give recommendation in 2 punchy, salty sentences. Mention specific sail m² and board Liters (L).
     """
 
-    try:
-        completion = client.chat.completions.create(
-            model="meta-llama/llama-3.2-1b-instruct", # Ultra cheap and fast
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return completion.choices[0].message.content
-    except Exception as e:
-        print(f"AI Error: {e}")
-        return "⚠️ Legend is offline. Wind looks good though, just get out there!"
+        # 4. THE ACTUAL AI CALL
+        try:
+            response = await client.chat.completions.create(
+                model="meta-llama/llama-3.1-8b-instruct", 
+                messages=[{"role": "system", "content": prompt}]
+            )
+            
+            # Check if we actually got a valid response back
+            if response and response.choices:
+                return response.choices[0].message.content
+            else:
+                print("DEBUG: AI returned an empty response object")
+                return "The Legend is staring at the horizon... (Empty AI response)"
+
+        except Exception as api_e:
+            print(f"AI API Error: {api_e}")
+            return "The Legend is lost in the fog. API issue."
+
+    except Exception as e: # <--- THIS IS PROBABLY WHAT IS MISSING OR MISALIGNED
+        print(f"General Error: {e}")
+        return "The Legend had a breakdown."
 
 # 5. THE MASTER LOGIC (Consolidated)
 async def get_shred_report(spot_key: str, user_weight:str = "75"):
@@ -246,6 +281,6 @@ async def get_shred_report(spot_key: str, user_weight:str = "75"):
     }
 
     # 🔥 CALL THE AI BRAIN
-    report_data['live']['vibe'] = await get_ai_recommendation(report_data, user_weight)
+    #report_data['live']['vibe'] = await get_ai_recommendation(report_data, user_weight)
 
     return report_data

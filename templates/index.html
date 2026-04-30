@@ -59,7 +59,13 @@
                         <div class="text-muted">meters</div>
                     </div>
                 </div>
-                <div class="alert alert-primary"><strong>The Vibe:</strong> {{ report.live.vibe }}</div>
+                <div class="alert alert-primary mt-4">
+                    <h4 class="alert-heading">The Vibe</h4>
+                    <p id="vibe-text" class="mb-0">
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        The Local Legend Master is checking the charts...
+                    </p>
+                </div>
             </div>
 
             <!-- FORECAST TREND -->
@@ -122,6 +128,30 @@
     </div>
     {% endif %}
 </div>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 1. Grab the spot and weight from the current URL
+        const params = new URLSearchParams(window.location.search);
+        const spot = params.get('spot');
+        const weight = params.get('weight') || 75;
+
+        // 2. If we have a spot, go fetch the vibe from our new API
+        if (spot) {
+            fetch(`/api/vibe?spot=${spot}&weight=${weight}`)
+                .then(response => response.json())
+                .then(data => {
+                    // 3. Replace the spinner with the actual AI text
+                    document.getElementById('vibe-text').innerText = data.vibe;
+                })
+                .catch(err => {
+                    document.getElementById('vibe-text').innerText = "Legend's gone to the pub. Try again later.";
+                    console.error(err);
+                });
+        } else {
+            document.getElementById('vibe-text').innerText = "Select a spot and click Shred Report to get the LLM's take.";
+        }
+    });
+</script>
 </body>
 </html>
 <hr>
