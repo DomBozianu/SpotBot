@@ -1,3 +1,7 @@
+from fastapi import FastAPI, HTTPException, Request  # Added Request here
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
+from typing import Optional
 import os
 import arrow
 import openmeteo_requests
@@ -7,8 +11,10 @@ from retry_requests import retry
 from dotenv import load_dotenv
 
 load_dotenv()
+app = FastAPI()
+templates = Jinja2Templates(directory="templates")
 
-# 1. SETUP OPEN-METEO (The high-performance way)
+# 1. SETUP OPEN-METEO
 cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
 retry_session = retry(cache_session, retries = 5)
 openmeteo = openmeteo_requests.Client(session = retry_session)
@@ -25,6 +31,12 @@ SPOTS = {
 }
 
 # 3. HELPER FUNCTIONS
+def get_compass_dir(degrees):
+    # Converts degrees (0-360) to a compass direction
+    val = int((degrees / 22.5) + 0.5)
+    arr = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+    return arr[(val % 16)]
+
 def get_vibe(knots):
     if knots < 10: return "🧘 Too light. Go for a paddle."
     if 10 <= knots < 15: return "🪁 Foiling or big kit only."
@@ -40,9 +52,8 @@ def get_weather_desc(code):
     }
     return wmo_codes.get(code, "Unknown conditions—use your eyes!")
 
-# 4. DATA FETCHING FUNCTION
+# 4. DATA FETCHING FUNCTIONS (Keep these as they were)
 def fetch_spot_data(lat, lon):
-    # Fetch Weather
     weather_params = {
         "latitude": lat, "longitude": lon,
         "current": ["weather_code", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"],
@@ -50,93 +61,115 @@ def fetch_spot_data(lat, lon):
         "wind_speed_unit": "kn", "timezone": "auto"
     }
     weather_res = openmeteo.weather_api("https://api.open-meteo.com/v1/forecast", params=weather_params)[0]
-    
-    # Fetch Marine
     marine_params = {
         "latitude": lat, "longitude": lon,
         "current": ["wave_height", "wave_period"],
         "timezone": "auto",
     }
     marine_res = openmeteo.weather_api("https://marine-api.open-meteo.com/v1/marine", params=marine_params)[0]
-    
     return weather_res, marine_res
 
 def fetch_tide_data(station_id):
-    """Fetches high and low tide events from Admiralty API."""
     api_key = os.getenv("ADMIRALTY_KEY")
     url = f"https://admiraltyapi.azure-api.net/uktidalapi/api/V1/Stations/{station_id}/TidalEvents"
-    
     headers = {"Ocp-Apim-Subscription-Key": api_key}
-    response = requests.get(url, headers=headers)
-    
-    if response.status_code == 200:
-        # We only want the next 4 events (roughly 24 hours)
-        return response.json()[:4]
+    try:
+        response = requests.get(url, headers=headers, timeout=5) # Added timeout
+        if response.status_code == 200:
+            return response.json()[:4]
+    except:
+        pass
     return []
 
-# 5. THE MASTER REPORT
-def run_shred_report(spot_key):
-    # .get() returns None if the key doesn't exist
+# 5. THE MASTER LOGIC (Consolidated)
+async def get_shred_report(spot_key: str):
     spot = SPOTS.get(spot_key)
-    
     if not spot:
-        print(f"\n❌ ERROR: I couldn't find '{spot_key}' in my database.")
-        print(f"   Available spots: {', '.join(SPOTS.keys())}")
-        return
+        return None
 
-    # Get Data
+    # 1. Fetch Data
     weather, marine = fetch_spot_data(spot['lat'], spot['lon'])
-    tides = fetch_tide_data(spot['tide_id']) # New Tide Call
+    tides = fetch_tide_data(spot['tide_id'])
     
-    # Process Weather
+    # 2. Process Current Weather
     curr = weather.Current()
+    # Use this safer way to map variables
     wind = curr.Variables(1).Value()
+    # If the hang started here, it's likely Index 2 (Direction) causing it
+    try:
+        wind_dir_degrees = curr.Variables(2).Value()
+        wind_dir_name = get_compass_dir(wind_dir_degrees)
+    except:
+        wind_dir_name = "N/A" # Fallback if direction fetch fails
+        
     gust = curr.Variables(3).Value()
     desc = get_weather_desc(curr.Variables(0).Value())
     
-    # Process Marine
     m_curr = marine.Current()
     wave_h = m_curr.Variables(0).Value()
     
-    print(f"--- ⚓ {spot['name'].upper()} SHRED REPORT ---")
-    print(f"📡 Status: {desc}")
-    print(f"💨 Wind: {wind:.1f} kn (Gusts: {gust:.1f} kn)")
-    print(f"🌊 Waves: {wave_h:.1f}m")
-    print(f"🤔 Vibe: {get_vibe(wind)}")
-    
-    # --- NEW: TREND SECTION ---
-    print(f"\n📈 6-HOUR TREND:")
+    # 3. NEW: Process 6-Hour Trend (The part that was missing!)
     hourly = weather.Hourly()
     f_winds = hourly.Variables(0).ValuesAsNumpy()[:6]
     f_gusts = hourly.Variables(1).ValuesAsNumpy()[:6]
+    trend = [
+        {
+            "hour": f"+{i+1}h", 
+            "wind": round(float(f_winds[i]), 1), 
+            "gust": round(float(f_gusts[i]), 1)
+        } 
+        for i in range(6)
+    ]
     
-    for i in range(6):
-        # This shows Hour +1, +2, etc.
-        print(f"  +{i+1}h: {f_winds[i]:.1f} kn (Gust: {f_gusts[i]:.1f})")
+    # 4. Process Tides
+    tide_list = []
+    for event in tides:
+        event_time = arrow.get(event['DateTime']).to('Europe/London')
+        tide_list.append({
+            "time": event_time.format('HH:mm'),
+            "type": "HIGH" if "High" in event['EventType'] else "LOW",
+            "height": round(event['Height'], 1)
+        })
+
+    # 5. Local Knowledge
+    wisdom = "No local knowledge found."
+    path = f"spotbot_knowledge/{spot['knowledge_file']}"
+    if os.path.exists(path):
+        with open(path, 'r') as f:
+            wisdom = f.read()[:500]
+
+    # 6. Return everything
+    return {
+        "metadata": {"spot_name": spot['name'], "status": desc},
+        "live": {
+            "wind_knots": round(wind, 1),
+            "wind_dir": wind_dir_name,
+            "gusts_knots": round(gust, 1),
+            "waves_m": round(wave_h, 1),
+            "vibe": get_vibe(wind)
+        },
+        "forecast_6h": trend,  # Now 'trend' is defined!
+        "tides": tide_list,
+        "local_knowledge": wisdom
+    }
+
+# 6. ROUTES
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    spot_key = request.query_params.get("spot")
+    report_data = None
+    if spot_key:
+        report_data = await get_shred_report(spot_key)
     
-    print(f"\n⏳ UPCOMING TIDES:")
-    if tides:
-        for event in tides:
-            # Parse the time using Arrow
-            event_time = arrow.get(event['DateTime']).to('Europe/London')
-            
-            # Format: 'Thu, Apr 30'
-            date_str = event_time.format('ddd, MMM D')
-            # Format: '14:20'
-            time_str = event_time.format('HH:mm')
-            
-            event_type = "HIGH" if "High" in event['EventType'] else "LOW "
-            height = event['Height']
-            
-            # We print the date and time together
-            print(f"  {date_str} @ {time_str} | {event_type} | {height:.1f}m")
-    else:
-        print("  ⚠️ Tide data unavailable.")
-
-    # Knowledge Base
-    print(f"\n📍 LOCAL KNOWLEDGE:")
-    with open(f"spotbot_knowledge/{spot['knowledge_file']}", 'r') as f:
-        print(f.read()[:300])
-
-# Run it!
-run_shred_report("portland_harbour")
+    return templates.TemplateResponse(
+    request=request, 
+    name="index.html", 
+    context={"report": report_data}
+    )
+# Keep this for your API/Testing
+@app.get("/api/report")
+async def api_report(spot: str):
+    data = await get_shred_report(spot)
+    if not data:
+        raise HTTPException(status_code=404, detail="Spot not found")
+    return data
