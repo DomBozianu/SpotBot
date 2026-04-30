@@ -18,8 +18,13 @@
     <div class="card shred-card p-4 mb-4">
         <form action="/" method="get" class="row g-3 justify-content-center">
             <div class="col-auto">
-                <select name="spot" class="form-select">
-                    <option value="portland_harbour">Portland Harbour</option>
+                <select name="spot" class=""form-select">
+                    <option value="">--Select a Spot --</option>
+                    {% for key, details in all_spots.items() %}
+                    <option value="{{ key }}" {% if request.query_params.get('spot') == key %}selected{% endif %}>
+                        {{ details.name }}
+                    </option>
+                    {% endfor %}
                 </select>
             </div>
             <label for="weight">Your Weight (kg):</label>

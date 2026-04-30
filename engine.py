@@ -7,6 +7,7 @@ from retry_requests import retry
 from openai import OpenAI, AsyncOpenAI  # Once you add the AI
 from dotenv import load_dotenv
 from pathlib import Path
+import json
 
 # This finds the folder where engine.py lives
 env_path = Path(__file__).parent / ".env"
@@ -26,15 +27,14 @@ cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
 retry_session = retry(cache_session, retries = 5)
 openmeteo = openmeteo_requests.Client(session = retry_session)
 
-SPOTS = {
-    "portland_harbour": {
-        "name": "Portland Harbour",
-        "lat": 50.58,
-        "lon": -2.45,
-        "tide_id": "0033",
-        "knowledge_file": "portland_harbour.txt"
-    }
-}
+def load_spots():
+    spots_path = Path(__file__).parent / "spots.json"
+    if spots_path.exists():
+        with open(spots_path, "r") as f:
+            return json.load(f)
+    return {}
+
+SPOTS = load_spots()
 
 def get_compass_info(degrees):
     # Mapping degrees to Full Words and Unicode Arrows
@@ -144,11 +144,12 @@ async def get_ai_recommendation(report, user_weight):
     DECISION LOGIC:
     1. Identify base sail size from Matrix for {user_weight}kg.
     2. Assess 'Survival Factor': If gusts > 30kts or waves > 1.5m, suggest sizing down board volume (Weight + 0L to +10L).
-    3. Assessment for Speed: If flat water and high wind, mention a 'Speed Needle' (Weight - 15L) for experts.
+    3. Assessment for Speed: If flat water and high wind, mention a 'Speed Needle' (Weight - 20L) for experts.
     4. CRITICAL: A board volume (L) is NEVER the same as a sail size (m2). If you suggest a 7.5L board, you are wrong. 
     
     TASK:
-    Give recommendation in 2 punchy, salty sentences. Mention specific sail m² and board Liters (L).
+    Start your response with "SENDINESS: [X]/10".
+    Then give your recommendation in 2 punchy, salty sentences. Mention specific sail m² and board Liters (L).
     """
 
         # 4. THE ACTUAL AI CALL
@@ -273,7 +274,7 @@ async def get_shred_report(spot_key: str, user_weight:str = "75"):
             "wind_trend": trend_icon,
             "gusts_knots": round(gust, 1),
             "waves_m": round(wave_h, 1),
-            "vibe": "Thinking..." # Temporary
+            "vibe": "The legend is checking the horizon..." # Temporary
         },
         "forecast_6h": trend,
         "tides": tide_list,
