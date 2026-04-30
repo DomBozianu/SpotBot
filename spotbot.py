@@ -31,11 +31,21 @@ SPOTS = {
 }
 
 # 3. HELPER FUNCTIONS
-def get_compass_dir(degrees):
-    # Converts degrees (0-360) to a compass direction
+def get_compass_info(degrees):
+    # Mapping degrees to Full Words and Unicode Arrows
+    # 0° is North (Wind blowing FROM the North, arrow points DOWN)
     val = int((degrees / 22.5) + 0.5)
-    arr = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
-    return arr[(val % 16)]
+    
+    directions = [
+        {"word": "North", "arrow": "⬇️"}, {"word": "N-East", "arrow": "↙️"},
+        {"word": "East", "arrow": "⬅️"}, {"word": "S-East", "arrow": "↖️"},
+        {"word": "South", "arrow": "⬆️"}, {"word": "S-West", "arrow": "↗️"},
+        {"word": "West", "arrow": "➡️"}, {"word": "N-West", "arrow": "↘️"}
+    ]
+    # We use % 8 because we simplified the list to the main 8 points
+    index = (val // 2) % 8 
+    return directions[index]
+
 
 def get_vibe(knots):
     if knots < 10: return "🧘 Too light. Go for a paddle."
@@ -71,14 +81,19 @@ def fetch_spot_data(lat, lon):
 
 def fetch_tide_data(station_id):
     api_key = os.getenv("ADMIRALTY_KEY")
+    if not api_key:
+        return []
+        
     url = f"https://admiraltyapi.azure-api.net/uktidalapi/api/V1/Stations/{station_id}/TidalEvents"
     headers = {"Ocp-Apim-Subscription-Key": api_key}
+    
     try:
-        response = requests.get(url, headers=headers, timeout=5) # Added timeout
+        # We use a 3-second timeout. If it's slow, we skip it so the app doesn't hang.
+        response = requests.get(url, headers=headers, timeout=3) 
         if response.status_code == 200:
             return response.json()[:4]
-    except:
-        pass
+    except Exception as e:
+        print(f"Tide API Timeout or Error: {e}")
     return []
 
 # 5. THE MASTER LOGIC (Consolidated)
@@ -93,14 +108,15 @@ async def get_shred_report(spot_key: str):
     
     # 2. Process Current Weather
     curr = weather.Current()
+
     # Use this safer way to map variables
     wind = curr.Variables(1).Value()
     # If the hang started here, it's likely Index 2 (Direction) causing it
     try:
         wind_dir_degrees = curr.Variables(2).Value()
-        wind_dir_name = get_compass_dir(wind_dir_degrees)
+        dir_info = get_compass_info(wind_dir_degrees) # Use the new function
     except:
-        wind_dir_name = "N/A" # Fallback if direction fetch fails
+        dir_info = {"word": "Unknown", "arrow": "❓"}
         
     gust = curr.Variables(3).Value()
     desc = get_weather_desc(curr.Variables(0).Value())
@@ -120,7 +136,16 @@ async def get_shred_report(spot_key: str):
         } 
         for i in range(6)
     ]
+    current_wind = float(wind)
+    future_wind = float(f_winds[0]) # The +1h forecast
     
+    if future_wind > current_wind + 2:
+        trend_icon = "📈 Building"
+    elif future_wind < current_wind - 2:
+        trend_icon = "📉 Dropping"
+    else:
+        trend_icon = "➡️ Steady"
+
     # 4. Process Tides
     tide_list = []
     for event in tides:
@@ -132,18 +157,30 @@ async def get_shred_report(spot_key: str):
         })
 
     # 5. Local Knowledge
+    # 5. Local Knowledge
     wisdom = "No local knowledge found."
-    path = f"spotbot_knowledge/{spot['knowledge_file']}"
+    folder = "spotbot_knowledge"
+    
+    # Create the folder if it's missing to prevent path errors
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+        
+    path = f"{folder}/{spot['knowledge_file']}"
     if os.path.exists(path):
-        with open(path, 'r') as f:
-            wisdom = f.read()[:500]
+        try:
+            with open(path, 'r') as f:
+                wisdom = f.read()[:500]
+        except Exception as e:
+            print(f"File Read Error: {e}")
 
     # 6. Return everything
     return {
         "metadata": {"spot_name": spot['name'], "status": desc},
         "live": {
             "wind_knots": round(wind, 1),
-            "wind_dir": wind_dir_name,
+            "wind_dir": dir_info['word'],
+            "wind_arrow": dir_info['arrow'],
+            "wind_trend": trend_icon,
             "gusts_knots": round(gust, 1),
             "waves_m": round(wave_h, 1),
             "vibe": get_vibe(wind)
