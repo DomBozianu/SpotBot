@@ -22,3 +22,15 @@ async def home(request: Request):
         name="index.html", 
         context={"report": report_data, "user_weight": weight}
     )
+    
+@app.get("/api/vibe")
+async def get_vibe_api(spot: str, weight: int):
+    # This mimics the logic in your home route but returns JSON
+    from engine import get_shred_report, get_ai_recommendation
+    
+    try:
+        report_data = await get_shred_report(spot, user_weight=weight)
+        vibe = await get_ai_recommendation(report_data, weight)
+        return {"vibe": vibe}
+    except Exception as e:
+        return {"vibe": "The Legend is speechless... (Error calculating vibe)"}
