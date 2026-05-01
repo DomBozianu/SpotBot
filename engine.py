@@ -111,6 +111,7 @@ def fetch_spot_data(lat, lon):
         "latitude": lat, "longitude": lon,
         "current": ["wave_height", "wave_period"],
         "timezone": "auto",
+        "length_unit": "metric"
     }
     weather_res = openmeteo.weather_api("https://api.open-meteo.com/v1/forecast", params=weather_params)[0]
     marine_res = openmeteo.weather_api("https://marine-api.open-meteo.com/v1/marine", params=marine_params)[0]
@@ -122,7 +123,8 @@ def fetch_tide_data(station_id):
     url = f"https://admiraltyapi.azure-api.net/uktidalapi/api/V1/Stations/{station_id}/TidalEvents"
     headers = {"Ocp-Apim-Subscription-Key": api_key}
     try:
-        response = requests.get(url, headers=headers, timeout=3)
+        # Change 'requests.get' to 'cache_session.get'
+        response = cache_session.get(url, headers=headers, timeout=3)
         if response.status_code == 200:
             return response.json()
     except: return []
@@ -215,6 +217,7 @@ async def get_shred_report(spot_key: str, user_weight: str = "75"):
     tide_display = "Stable"
     tidal_flow = "Low"  # Default
     next_tide_obj = None
+    tide_phase = "Unknown"
     
     raw_tz = weather.Timezone()
     tz_name = raw_tz.decode('utf-8') if isinstance(raw_tz, bytes) else raw_tz
@@ -272,9 +275,6 @@ async def get_shred_report(spot_key: str, user_weight: str = "75"):
         elif ratio < 0.60: tide_phase = "Neaps"
         else: tide_phase = "Mid-Cycle"
 
-    # Spring/Neap Logic (Uses the heights we just processed)
-    tide_cycle = get_tide_phase(tide_list)
-
     # 5. Sun / Daylight Logic
     now_local = arrow.now(tz_name)
     # 'sunset' was defined earlier in the function from weather.Sunset()
@@ -316,7 +316,8 @@ async def get_shred_report(spot_key: str, user_weight: str = "75"):
             "beaufort_f": beaufort['f'],
             "beaufort_name": beaufort['name'],  # NEW: Official name
             "beaufort_desc": beaufort['desc'],
-            "wind_dir": dir_info['word'],
+            "wind_dir_name": dir_info['word'],
+            "wind_dir": int(wind_deg),
             "wind_arrow": dir_info['arrow'],
             "wind_relative": rel_wind,
             "wind_trend": wind_trend,

@@ -88,8 +88,12 @@
                             <div class="card-body p-3 d-flex flex-column justify-content-between">
                                 <div>
                                     <!-- Direction Arrow -->
-                                    <div class="wind-icon mb-1" style="font-size: 1.5rem;">{{ report.live.wind_arrow }}</div>
-                                    
+                                    <div class="mb-1">
+                                        <span class="wind-icon" style="font-size: 1.5rem;">{{ report.live.wind_arrow }}</span>
+                                        <!-- Added Cardinal and Degrees here -->
+                                        <span class="fw-bold small ms-1">{{ report.live.wind_dir_name }}</span>
+                                        <span class="text-muted small">({{ report.live.wind_dir }}°)</span>
+                                    </div>
                                     <!-- Main Speed -->
                                     <div class="h3 mb-0 wind-{{ report.live.wind_color }}">
                                         {{ report.live.wind_knots }}<small class="h6">kts</small>
