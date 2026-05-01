@@ -1,0 +1,44 @@
+{
+  "beaufort_scale": [
+    {"force": 0, "knots": "0-1", "name": "Calm", "sea": "Sea like a mirror.", "land": "Calm; smoke rises vertically."},
+    {"force": 1, "knots": "1-3", "name": "Light Air", "sea": "Ripples with the appearance of scales; no foam crests.", "land": "Direction of wind shown by smoke drift."},
+    {"force": 2, "knots": "4-6", "name": "Light Breeze", "sea": "Small wavelets; crests have a glassy appearance.", "land": "Wind felt on face; leaves rustle."},
+    {"force": 3, "knots": "7-10", "name": "Gentle Breeze", "sea": "Large wavelets; crests begin to break.", "land": "Leaves and small twigs in constant motion."},
+    {"force": 4, "knots": "11-16", "name": "Moderate Breeze", "sea": "Small waves; fairly frequent white horses.", "land": "Raises dust and loose paper; small branches moved."},
+    {"force": 5, "knots": "17-21", "name": "Fresh Breeze", "sea": "Moderate waves; many white horses.", "land": "Small trees in leaf begin to sway."},
+    {"force": 6, "knots": "22-27", "name": "Strong Breeze", "sea": "Large waves; white foam crests everywhere.", "land": "Large branches in motion; whistling in wires."},
+    {"force": 7, "knots": "28-33", "name": "Near Gale", "sea": "Sea heaps up; white foam blown in streaks.", "land": "Whole trees in motion; hard to walk against wind."},
+    {"force": 8, "knots": "34-40", "name": "Gale", "sea": "High waves; crests break into spindrift.", "land": "Breaks twigs off trees; impedes progress."},
+    {"force": 9, "knots": "41-47", "name": "Severe Gale", "sea": "High waves; dense foam; visibility affected.", "land": "Slight structural damage (chimneys/slates)."},
+    {"force": 10, "knots": "48-55", "name": "Storm", "sea": "Very high waves; sea surface white.", "land": "Trees uprooted; structural damage."},
+    {"force": 11, "knots": "56-63", "name": "Violent Storm", "sea": "Exceptionally high waves; foam patches.", "land": "Widespread damage."},
+    {"force": 12, "knots": "64+", "name": "Hurricane", "sea": "Air filled with foam and spray.", "land": "Devastation."}
+  ],
+  "glossary": [
+    {
+      "term": "Wave Power",
+      "unit": "kW/m",
+      "definition": "The energy transport rate. < 10 (Weak) is ripple-like; 10-40 (Clean) is good for carving; > 40 (Heavy) is powerful surf."
+    },
+    {
+      "term": "Wave Period",
+      "unit": "Seconds",
+      "definition": "Time between crests. > 8s is organized swell; < 5s is messy wind-chop."
+    },
+    {
+      "term": "Wind Relative",
+      "unit": "Direction",
+      "definition": "How the wind hits the shore. Side-shore is usually best for windsurfing waves; On-shore is safer but choppier."
+    },
+    {
+    "term": "Spring Tides",
+    "unit": "Full/New Moon",
+    "definition": "Occur twice a month when the moon is full or new. Expect higher highs, lower lows, and much stronger currents."
+},
+{
+    "term": "Neap Tides",
+    "unit": "Quarter Moon",
+    "definition": "Occur during the moon's quarter phases. The difference between high and low tide is at its smallest, resulting in mellow water movement."
+}
+  ]
+}
