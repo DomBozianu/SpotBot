@@ -8,6 +8,7 @@ from openai import OpenAI, AsyncOpenAI  # Once you add the AI
 from dotenv import load_dotenv
 from pathlib import Path
 import json
+from datetime import datetime, timedelta
 
 # This finds the folder where engine.py lives
 env_path = Path(__file__).parent / ".env"
@@ -204,18 +205,28 @@ async def get_shred_report(spot_key: str, user_weight:str = "75"):
     
     # 3. NEW: Process 6-Hour Trend (The part that was missing!)
     hourly = weather.Hourly()
-    f_winds = hourly.Variables(0).ValuesAsNumpy()[:6]
-    f_gusts = hourly.Variables(1).ValuesAsNumpy()[:6]
-    trend = [
-        {
-            "hour": f"+{i+1}h", 
+    
+    # Get the raw arrays (numpy) for the next 12 hours
+    f_winds = hourly.Variables(0).ValuesAsNumpy()[:12]
+    f_gusts = hourly.Variables(1).ValuesAsNumpy()[:12]
+    
+    # Open-Meteo gives us the start time and the interval
+    start_time = datetime.fromtimestamp(hourly.Time(), tz=None) # Start of the forecast
+    
+    trend = []
+    for i in range(12):
+        # Calculate the actual time for each hour slot
+        current_hour_dt = start_time + timedelta(hours=i)
+        
+        trend.append({
+            "hour": current_hour_dt.strftime("%H:%M"), # Results in "14:00", "15:00", etc.
             "wind": round(float(f_winds[i]), 1), 
             "gust": round(float(f_gusts[i]), 1)
-        } 
-        for i in range(6)
-    ]
+        })
+
+    # Trend logic for the "Trend" Tile
     current_wind = float(wind)
-    future_wind = float(f_winds[0]) # The +1h forecast
+    future_wind = float(f_winds[2]) # Looking 3 hours ahead for a better "trend" feel
     
     if future_wind > current_wind + 2:
         trend_icon = "📈 Building"
@@ -265,7 +276,8 @@ async def get_shred_report(spot_key: str, user_weight:str = "75"):
         "metadata": {
             "spot_name": spot['name'], 
             "status": desc,
-            "tide_summary": tide_state
+            "tide_summary": tide_state,
+            "tide_list": tide_list
         },
         "live": {
             "wind_knots": round(wind, 1),
@@ -276,7 +288,7 @@ async def get_shred_report(spot_key: str, user_weight:str = "75"):
             "waves_m": round(wave_h, 1),
             "vibe": "The legend is checking the horizon..." # Temporary
         },
-        "forecast_6h": trend,
+        "forecast_12h": trend,
         "tides": tide_list,
         "local_knowledge": wisdom
     }
