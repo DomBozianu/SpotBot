@@ -1,166 +1,293 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Windsurf SpotBot</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpotBot | Local Legend</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Leaflet CSS for Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .shred-card { border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: none; }
-        .metric { font-size: 2rem; font-weight: bold; color: #007bff; }
-        .trend-table { background: white; border-radius: 10px; overflow: hidden; }
+        body { background-color: #f4f7f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #map { height: 450px; border-radius: 15px; margin-bottom: 20px; border: 3px solid #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .shred-card { border: none; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); background: white; }
+        .wind-icon { font-size: 2.2rem; display: block; margin-bottom: 5px; }
+        .legend-box { border-left: 5px solid #ffc107; background-color: #fff9e6; border-radius: 8px; }
+        .trend-table th { font-size: 0.8rem; text-transform: uppercase; color: #6c757d; }
     </style>
 </head>
 <body>
-<div class="container py-5">
-    <h1 class="text-center mb-4">🏄 Windsurf SpotBot</h1>
-    
-    <!-- SPOT SELECTION -->
-    <div class="card shred-card p-4 mb-4">
-        <form action="/" method="get" class="row g-3 justify-content-center">
-            <div class="col-auto">
-                <select name="spot" class=""form-select">
-                    <option value="">--Select a Spot --</option>
-                    {% for key, details in all_spots.items() %}
-                    <option value="{{ key }}" {% if request.query_params.get('spot') == key %}selected{% endif %}>
-                        {{ details.name }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <label for="weight">Your Weight (kg):</label>
-            <input type="number" id="weight" name="weight" value="{{ user_weight }}"" min="30" max="150">
-            <div class="col-auto">
-                <button type="submit" class="btn btn-primary">Get Shred Report</button>
-            </div>
-        </form>
-    </div>
 
-    {% if report %}
+<nav class="navbar navbar-dark bg-primary mb-4">
+    <div class="container">
+        <a class="navbar-brand" href="/">🌊 <strong>SpotBot</strong> | <small>Local Wisdom Engine</small></a>
+    </div>
+</nav>
+
+<div class="container">
     <div class="row">
-        <!-- LIVE METRICS -->
-        <div class="col-md-8">
-            <div class="card shred-card p-4 mb-4 bg-white">
-                <h3>⚓ {{ report.metadata.spot_name }}</h3>
-                <span class="badge bg-info text-dark">{{ report.metadata.status }}</span>
-                
-                <div class="row text-center my-4">
-                    <!-- LOOK FOR: <div class="col"><div>Wind</div> ... -->
-                    <div class="col">
-                        <div class="fw-bold">Wind</div>
-                        <div class="metric">
-                            {{ report.live.wind_arrow }} {{ report.live.wind_knots }} <span style="font-size: 1rem;">kn</span>
-                        </div>
-                        <div class="badge bg-secondary">{{ report.live.wind_trend }}</div>
-                        <div class="text-muted small">Blowing from the {{ report.live.wind_dir }}</div>
+        <!-- LEFT COLUMN: MAP & INPUTS -->
+        <div class="col-lg-5">
+            <div id="map"></div>
+            
+            <div class="card shred-card p-4 mb-4">
+                <form id="spotForm" action="/" method="get">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Select Spot</label>
+                        <select name="spot" id="spotSelect" class="form-select form-select-lg">
+                            <option value="">-- Click map or select --</option>
+                            {% for key, details in all_spots.items() %}
+                            <option value="{{ key }}" {% if request.query_params.get('spot') == key %}selected{% endif %}>
+                                {{ details.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
                     </div>
-                    <div class="col">
-                        <div>Gusts</div>
-                        <div class="metric">{{ report.live.gusts_knots }}</div>
-                        <div class="text-muted">knots</div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Rider Weight (kg)</label>
+                        <input type="number" name="weight" value="{{ user_weight }}" class="form-control" min="30" max="150">
                     </div>
-                    <div class="col">
-                        <div>Waves</div>
-                        <div class="metric">{{ report.live.waves_m }}</div>
-                        <div class="text-muted">meters</div>
+
+                    <button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn">
+                        <span id="btnText">Get Shred Report</span>
+                        <div id="spinner" class="spinner-border spinner-border-sm d-none" role="status"></div>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- RIGHT COLUMN: RESULTS -->
+        <div class="col-lg-7">
+            {% if report %}
+            <div class="card shred-card p-4">
+                <div class="d-flex justify-content-between align-items-start mb-4">
+                    <div>
+                        <h2 class="mb-1">{{ report.metadata.spot_name }}</h2>
+                        <span class="badge bg-light text-primary border">{{ report.metadata.status }}</span>
+                    </div>
+                    <div class="text-end">
+                        <small class="text-muted d-block">TIDE STATE</small>
+                        <strong class="text-uppercase">{{ report.metadata.tide_summary }}</strong>
                     </div>
                 </div>
-                <div class="alert alert-primary mt-4">
-                    <h4 class="alert-heading">The Vibe</h4>
-                    <p id="vibe-text" class="mb-0">
-                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                        The Local Legend Master is checking the charts...
+
+                <!-- LIVE WEATHER GRID -->
+                <div class="row g-3 mb-4 text-center">
+                    <div class="col-6 col-md-3">
+                        <div class="p-3 border rounded">
+                            <span class="wind-icon">{{ report.live.wind_arrow }}</span>
+                            <span class="h4 mb-0">{{ report.live.wind_knots }}</span><small>kts</small>
+                            <div class="text-muted small">{{ report.live.wind_dir }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="p-3 border rounded">
+                            <span class="wind-icon">💨</span>
+                            <span class="h4 mb-0">{{ report.live.gusts_knots }}</span><small>kts</small>
+                            <div class="text-muted small">Gusts</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="p-3 border rounded">
+                            <span class="wind-icon">🌊</span>
+                            <span class="h4 mb-0">{{ report.live.waves_m }}</span><small>m</small>
+                            <div class="text-muted small">Waves</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="p-3 border rounded">
+                            <span class="wind-icon">📈</span>
+                            <div class="fw-bold">{{ report.live.wind_trend }}</div>
+                            <div class="text-muted small">Trend</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI VIBE SECTION -->
+                <div class="legend-box p-3 mb-4">
+                    <h5 class="mb-2">🗨️ The Local Legend says:</h5>
+                    <p class="lead mb-0" id="vibeDisplay" style="font-size: 1.1rem; font-style: italic;">
+                        {{ report.live.vibe }}
                     </p>
                 </div>
-            </div>
 
-            <!-- FORECAST TREND -->
-            <div class="card shred-card p-4 bg-white">
-                <h4 class="mb-3">📈 6-Hour Forecast Trend</h4>
-                <table class="table table-hover trend-table">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Time</th>
-                            <th>Wind (kn)</th>
-                            <th>Gust (kn)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for hour in report.forecast_6h %}
-                        <tr>
-                            <td>{{ hour.hour }}</td>
-                            <td>{{ hour.wind }}</td>
-                            <td>{{ hour.gust }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <!-- HOURLY FORECAST CHART -->
+                <h6 class="fw-bold mb-3">12-HOUR FORECAST (Knots)</h6>
+                <div style="height: 250px; width: 100%;">
+                    <canvas id="windChart"></canvas>
+                </div>
+                <!-- TIDE CHART -->
+                <h6 class="fw-bold mt-4 mb-3">🌊 TIDAL CURVE (24H)</h6>
+                <div style="height: 200px; width: 100%;">
+                    <canvas id="tideChart"></canvas>
+                </div>
             </div>
-        </div>
-        
-        <!-- TIDES & INFO -->
-        <div class="col-md-4">
-            <div class="card shred-card p-4 bg-dark text-white mb-4">
-                <h4>⏳ Tides</h4>
-                <hr>
-                <ul class="list-unstyled">
-                    {% for tide in report.tides %}
-                    <li class="mb-2 d-flex justify-content-between align-items-center">
-                        <div>
-                            <!-- Matches "day" and "date" from your engine.py -->
-                            <span class="text-info" style="font-size: 0.85rem;">
-                                {{ tide.day }} {{ tide.date }}
-                            </span><br>
-                            <strong>{{ tide.time }}</strong>
-                        </div>
-                        <div class="text-end">
-                            <span class="badge {{ 'bg-primary' if tide.type == 'HIGH' else 'bg-secondary' }}">
-                                {{ tide.type }}
-                            </span>
-                            <div class="small text-muted">{{ tide.height }}m</div>
-                        </div>
-                    </li>
-                    <hr class="border-secondary my-1">
-                    {% endfor %}
-                </ul>
+            {% else %}
+            <!-- Welcome View -->
+            <div class="text-center py-5 bg-white rounded shred-card">
+                <h3 class="text-muted">Ready to shred?</h3>
+                <p>Pick a spot on the map to consult the Legend.</p>
+                <img src="https://cdn-icons-png.flaticon.com/512/3144/3144573.png" width="100" class="opacity-25 mt-3">
             </div>
-        </div>
-
-            <div class="card shred-card p-4 bg-secondary text-white">
-                <h4>📖 Local Knowledge</h4>
-                <p class="small">{{ report.local_knowledge }}</p>
-            </div>
+            {% endif %}
         </div>
     </div>
-    {% endif %}
 </div>
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // 1. Grab the spot and weight from the current URL
-        const params = new URLSearchParams(window.location.search);
-        const spot = params.get('spot');
-        const weight = params.get('weight') || 75;
 
-        // 2. If we have a spot, go fetch the vibe from our new API
-        if (spot) {
-            fetch(`/api/vibe?spot=${spot}&weight=${weight}`)
-                .then(response => response.json())
-                .then(data => {
-                    // 3. Replace the spinner with the actual AI text
-                    document.getElementById('vibe-text').innerText = data.vibe;
-                })
-                .catch(err => {
-                    document.getElementById('vibe-text').innerText = "Legend's gone to the pub. Try again later.";
-                    console.error(err);
-                });
-        } else {
-            document.getElementById('vibe-text').innerText = "Select a spot and click Shred Report to get the LLM's take.";
+<!-- Scripts: Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // Initialize Map
+    const map = L.map('map').setView([52.5, -2.5], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    const spots = {{ all_spots | tojson }};
+    const currentSpot = "{{ request.query_params.get('spot', '') }}";
+    const markers = {};
+
+    for (const [key, spot] of Object.entries(spots)) {
+        const marker = L.marker([spot.lat, spot.lon]).addTo(map);
+        marker.bindPopup(`<strong>${spot.name}</strong>`);
+        markers[key] = marker;
+
+        marker.on('click', function() {
+            document.getElementById('spotSelect').value = key;
+            map.setView([spot.lat, spot.lon], 11);
+        });
+    }
+
+    document.getElementById('spotSelect').addEventListener('change', function(e) {
+        const key = e.target.value;
+        if (key && spots[key]) {
+            map.setView([spots[key].lat, spots[key].lon], 11);
+            markers[key].openPopup();
         }
     });
+
+    if (currentSpot && spots[currentSpot]) {
+        map.setView([spots[currentSpot].lat, spots[currentSpot].lon], 12);
+        markers[currentSpot].openPopup();
+    }
+
+    // 2. The Trend Chart
+    {% if report %}
+    const ctx = document.getElementById('windChart').getContext('2d');
+    // Update the key to forecast_12h
+    const windData = {{ (report.forecast_12h if report.forecast_12h is defined else []) | tojson }};
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: windData.map(d => d.hour), // This will now show "14:00", etc.
+            datasets: [{
+                label: 'Base Wind',
+                data: windData.map(d => d.wind),
+                // ... (keep existing styling)
+            }, {
+                label: 'Gusts',
+                data: windData.map(d => d.gust),
+                // ... (keep existing styling)
+            }]
+        },
+        options: {
+            // ... (keep existing options)
+        }
+    });
+    {% endif %}
+    {% if report %}
+    // 3. The Tide Chart
+    const tideCtx = document.getElementById('tideChart').getContext('2d');
+    // Ensure we are pointing to the correct key: report.metadata.tide_list
+    const rawTideData = {{ report.metadata.tide_list | tojson }};
+
+    // Limit to the first 4-6 events so the chart isn't squashed
+    const tideData = rawTideData.slice(0, 6);
+
+    new Chart(tideCtx, {
+        type: 'line',
+        data: {
+            labels: tideData.map(t => t.time), 
+            datasets: [{
+                label: 'Tide Height (m)',
+                data: tideData.map(t => t.height),
+                borderColor: '#0dcaf0',
+                backgroundColor: 'rgba(13, 202, 240, 0.2)',
+                fill: true,
+                tension: 0.4,
+                // Check for "HIGH" (uppercase) to match your engine.py
+                pointBackgroundColor: tideData.map(t => t.type === 'HIGH' ? '#0dcaf0' : '#fff'),
+                pointRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const item = tideData[context.dataIndex];
+                            // Using the keys from your engine.py: item.type and item.height
+                            return `${item.type}: ${item.height}m`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: { 
+                    beginAtZero: true, 
+                    display: true,
+                    title: { display: true, text: 'Meters' }
+                }
+            }
+        }
+    });
+    {% endif %}
+    // Loading Animation
+    document.getElementById('spotForm').onsubmit = function() {
+        document.getElementById('btnText').innerText = "Consulting the Legend...";
+        document.getElementById('spinner').classList.remove('d-none');
+        document.getElementById('submitBtn').classList.add('disabled');
+    };
+// --- AJAX AI Loader ---
+// Use window.onload to ensure everything (including the chart) is ready
+window.addEventListener('load', function() {
+    const vibeDisplay = document.getElementById('vibeDisplay');
+    
+    // Explicitly grab weight again to be 100% safe
+    const urlParams = new URLSearchParams(window.location.search);
+    const spotParam = urlParams.get('spot');
+    const weightParam = urlParams.get('weight') || '75';
+    
+    if (spotParam && vibeDisplay) {
+        console.log("Requesting AI for:", spotParam, "at weight:", weightParam);
+        
+        fetch(`/api/vibe?spot=${spotParam}&weight=${weightParam}`)
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            })
+            .then(data => {
+                if (data.vibe) {
+                    vibeDisplay.innerText = data.vibe;
+                    vibeDisplay.animate([
+                        { opacity: 0, transform: 'translateY(10px)' },
+                        { opacity: 1, transform: 'translateY(0)' }
+                    ], { duration: 800, fill: 'forwards', easing: 'ease-out' });
+                }
+            })
+            .catch(err => {
+                console.error("AI Fetch Error:", err);
+                vibeDisplay.innerText = "The Legend is speechless... (Check console for error)";
+            });
+    }
+});
 </script>
+
 </body>
 </html>
-<hr>
-<!-- <details>
-    <summary>View Raw Data (Debug)</summary>
-    <pre>{{ report | tojson(indent=2) }}</pre>
-</details> -->
