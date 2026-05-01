@@ -37,6 +37,24 @@ def load_spots():
 
 SPOTS = load_spots()
 
+def get_relative_wind(wind_deg, shoreline_deg):
+    """
+    Calculates if wind is Onshore, Offshore, or Cross-shore.
+    shoreline_deg: The direction the beach FACES.
+    """
+    if shoreline_deg is None: return "Unknown"
+    
+    # Calculate the difference
+    diff = abs(wind_deg - shoreline_deg) % 360
+    
+    if diff > 180:
+        diff = 360 - diff
+        
+    if diff < 30: return "🚫 Onshore"      # Blowing straight onto the beach
+    if diff > 150: return "🚩 Offshore"    # Blowing away from the beach
+    if 60 < diff < 120: return "💎 Cross-shore"
+    return "📈 Cross-on/off"
+
 def get_compass_info(degrees):
     # Mapping degrees to Full Words and Unicode Arrows
     # 0° is North (Wind blowing FROM the North, arrow points DOWN)
@@ -62,10 +80,20 @@ def get_vibe(knots):
 def get_weather_desc(code):
     wmo_codes = {
         0: "Clear skies—get the sunglasses out! 😎",
-        1: "Mainly clear.", 2: "Partly cloudy.", 3: "Overcast. ☁️",
-        45: "Foggy. 🌫️", 61: "Slight rain. 🌧️",
+        1: "Mainly clear.", 
+        2: "Partly cloudy.", 
+        3: "Overcast. ☁️",
+        45: "Foggy. 🌫️", 
+        48: "Depositing rime fog.",
+        51: "Light drizzle. 💧",
+        61: "Slight rain. 🌧️",
+        63: "Moderate rain. 🌧️",
+        71: "Slight snow fall.",
+        80: "Slight rain showers. 🌦️",
+        81: "Moderate rain showers.",
+        95: "Thunderstorms. ⚡"
     }
-    return wmo_codes.get(code, "Unknown conditions—use your eyes!")
+    return wmo_codes.get(code, f"Code {code}—Use your eyes! 👀")
 
 # 4. DATA FETCHING FUNCTIONS (Keep these as they were)
 def fetch_spot_data(lat, lon):
@@ -73,7 +101,9 @@ def fetch_spot_data(lat, lon):
         "latitude": lat, "longitude": lon,
         "current": ["weather_code", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"],
         "hourly": ["wind_speed_10m", "wind_gusts_10m"],
-        "wind_speed_unit": "kn", "timezone": "auto"
+        "daily": ["sunrise", "sunset"],
+        "wind_speed_unit": "kn", 
+        "timezone": "auto"
     }
     weather_res = openmeteo.weather_api("https://api.open-meteo.com/v1/forecast", params=weather_params)[0]
     marine_params = {
@@ -185,33 +215,48 @@ async def get_shred_report(spot_key: str, user_weight:str = "75"):
     weather, marine = fetch_spot_data(spot['lat'], spot['lon'])
     tides = fetch_tide_data(spot['tide_id'])
     
-    # 2. Process Current Weather
+    # 2. Weather Processing
     curr = weather.Current()
+    wind_spd = curr.Variables(1).Value()
+    wind_deg = curr.Variables(2).Value()
+    gust_spd = curr.Variables(3).Value()
 
-    # Use this safer way to map variables
-    wind = curr.Variables(1).Value()
-    # If the hang started here, it's likely Index 2 (Direction) causing it
-    try:
-        wind_dir_degrees = curr.Variables(2).Value()
-        dir_info = get_compass_info(wind_dir_degrees) # Use the new function
-    except:
-        dir_info = {"word": "Unknown", "arrow": "❓"}
-        
-    gust = curr.Variables(3).Value()
-    desc = get_weather_desc(curr.Variables(0).Value())
+    #sunrisesunset stuff
+    daily = weather.Daily()
     
+    def get_sun_time(index):
+        try:
+            # IMPORTANT: Sunrise/Sunset use ValuesInt64AsNumpy, not ValuesAsNumpy
+            ts_arr = daily.Variables(index).ValuesInt64AsNumpy()
+            ts = ts_arr[0] if hasattr(ts_arr, "__len__") else ts_arr
+            
+            if ts == 0: return "--:--"
+            
+            # Convert Unix timestamp to HH:MM
+            return datetime.fromtimestamp(float(ts)).strftime("%H:%M")
+        except Exception as e:
+            print(f"Sun Error: {e}")
+            return "--:--"
+
+    sunrise = get_sun_time(0) # Index 0 is sunrise
+    sunset = get_sun_time(1)  # Index 1 is sunset
+    today_date = datetime.now().strftime("%a, %b %d")
+
+    # NEW: Relative Wind Logic
+    shore_deg = spot.get('shoreline_bearing')
+    rel_wind = get_relative_wind(wind_deg, shore_deg)
+    dir_info = get_compass_info(wind_deg)
+    
+    # 3. Marine Processing (Waves + Period)
     m_curr = marine.Current()
     wave_h = m_curr.Variables(0).Value()
+    wave_p = m_curr.Variables(1).Value() # Extracting Period
     
-    # 3. NEW: Process 6-Hour Trend (The part that was missing!)
+    # 4. Hourly Trends (Slicing 12 hours)
     hourly = weather.Hourly()
-    
-    # Get the raw arrays (numpy) for the next 12 hours
     f_winds = hourly.Variables(0).ValuesAsNumpy()[:12]
     f_gusts = hourly.Variables(1).ValuesAsNumpy()[:12]
-    
-    # Open-Meteo gives us the start time and the interval
-    start_time = datetime.fromtimestamp(hourly.Time(), tz=None) # Start of the forecast
+    start_time = datetime.fromtimestamp(hourly.Time(), tz=None)
     
     trend = []
     for i in range(12):
@@ -225,7 +270,7 @@ async def get_shred_report(spot_key: str, user_weight:str = "75"):
         })
 
     # Trend logic for the "Trend" Tile
-    current_wind = float(wind)
+    current_wind = float(wind_spd)
     future_wind = float(f_winds[2]) # Looking 3 hours ahead for a better "trend" feel
     
     if future_wind > current_wind + 2:
@@ -255,19 +300,11 @@ async def get_shred_report(spot_key: str, user_weight:str = "75"):
             next_event = tide_list[0]
             tide_state = f"Heading to {next_event['type']}"
 
-    # --- engine.py Section 5 ---
+    # 8. Local Wisdom
     wisdom = "No local knowledge found."
-    # Use Path for more reliable directory management
-    base_folder = Path(__file__).parent / "spotbot_knowledge" / "spots"
-
-    # Use the filename from your spot dictionary
-    path = base_folder / spot['knowledge_file']
-
+    path = Path(__file__).parent / "spotbot_knowledge" / "spots" / spot['knowledge_file']
     if path.exists():
-        try:
-            wisdom = path.read_text(encoding='utf-8')[:500]
-        except Exception as e:
-            print(f"File Read Error: {e}")
+        wisdom = path.read_text(encoding='utf-8')[:500]
     else:
         print(f"DEBUG: Wisdom file not found at {path.absolute()}")
 
@@ -275,17 +312,22 @@ async def get_shred_report(spot_key: str, user_weight:str = "75"):
     report_data = {
         "metadata": {
             "spot_name": spot['name'], 
-            "status": desc,
+            "status": get_weather_desc(curr.Variables(0).Value()),
+            "date": today_date,
+            "sunrise": sunrise,
+            "sunset": sunset,
             "tide_summary": tide_state,
             "tide_list": tide_list
         },
         "live": {
-            "wind_knots": round(wind, 1),
+            "wind_knots": round(wind_spd, 1),
             "wind_dir": dir_info['word'],
             "wind_arrow": dir_info['arrow'],
+            "wind_relative": rel_wind,
             "wind_trend": trend_icon,
-            "gusts_knots": round(gust, 1),
+            "gusts_knots": round(gust_spd, 1),
             "waves_m": round(wave_h, 1),
+            "wave_period": round(wave_p, 1),
             "vibe": "The legend is checking the horizon..." # Temporary
         },
         "forecast_12h": trend,

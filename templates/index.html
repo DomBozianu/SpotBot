@@ -76,34 +76,87 @@
 
                 <!-- LIVE WEATHER GRID -->
                 <div class="row g-3 mb-4 text-center">
+                    
+                    <!-- 1. WIND CARD -->
                     <div class="col-6 col-md-3">
-                        <div class="p-3 border rounded">
-                            <span class="wind-icon">{{ report.live.wind_arrow }}</span>
-                            <span class="h4 mb-0">{{ report.live.wind_knots }}</span><small>kts</small>
-                            <div class="text-muted small">{{ report.live.wind_dir }}</div>
+                        <div class="card h-100 shadow-sm border-0 bg-light">
+                            <div class="card-body p-3 d-flex flex-column justify-content-between">
+                                <div>
+                                    <div class="wind-icon mb-1" style="font-size: 1.5rem;">{{ report.live.wind_arrow }}</div>
+                                    <div class="h3 mb-0 fw-bold text-primary">{{ report.live.wind_knots }}<small class="h6">kts</small></div>
+                                    <div class="text-muted small">Gusts: {{ report.live.gusts_knots }}kts</div>
+                                    <div class="text-uppercase fw-bold small mt-1">{{ report.live.wind_dir }}</div>
+                                </div>
+                                <div>
+                                    <hr class="my-2 opacity-25">
+                                    <div class="small fw-bold">{{ report.live.wind_relative }}</div>
+                                    <div class="text-muted small">{{ report.live.wind_trend }}</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
+                    <!-- 2. WAVE CARD -->
                     <div class="col-6 col-md-3">
-                        <div class="p-3 border rounded">
-                            <span class="wind-icon">💨</span>
-                            <span class="h4 mb-0">{{ report.live.gusts_knots }}</span><small>kts</small>
-                            <div class="text-muted small">Gusts</div>
+                        <div class="card h-100 shadow-sm border-0 bg-light">
+                            <div class="card-body p-3 d-flex flex-column justify-content-between">
+                                <div>
+                                    <div class="mb-1" style="font-size: 1.5rem;">🌊</div>
+                                    <div class="h3 mb-0 fw-bold text-info">{{ report.live.waves_m }}<small class="h6">m</small></div>
+                                    <div class="text-uppercase fw-bold small mt-1">Swell</div>
+                                </div>
+                                <div>
+                                    <hr class="my-2 opacity-25">
+                                    <div class="small fw-bold">Period: {{ report.live.wave_period }}s</div>
+                                    <div class="text-muted small">Power: High</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
+                    <!-- 3. TIDE CARD -->
                     <div class="col-6 col-md-3">
-                        <div class="p-3 border rounded">
-                            <span class="wind-icon">🌊</span>
-                            <span class="h4 mb-0">{{ report.live.waves_m }}</span><small>m</small>
-                            <div class="text-muted small">Waves</div>
+                        <div class="card h-100 shadow-sm border-0 bg-light">
+                            <div class="card-body p-3 d-flex flex-column justify-content-between">
+                                <div>
+                                    <div class="mb-1" style="font-size: 1.5rem;">⏳</div>
+                                    <div class="h5 mb-0 fw-bold">{{ report.metadata.tide_summary }}</div>
+                                    <div class="text-uppercase fw-bold small mt-1">Tide</div>
+                                </div>
+                                <div>
+                                    <hr class="my-2 opacity-25">
+                                    {% if report.metadata.tide_list %}
+                                    <div class="small fw-bold">Next: {{ report.metadata.tide_list[0].time }}</div>
+                                    <div class="text-muted small">{{ report.metadata.tide_list[0].type }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
                         </div>
                     </div>
+
+                    <!-- 4. ENVIRONMENT CARD -->
                     <div class="col-6 col-md-3">
-                        <div class="p-3 border rounded">
-                            <span class="wind-icon">📈</span>
-                            <div class="fw-bold">{{ report.live.wind_trend }}</div>
-                            <div class="text-muted small">Trend</div>
+                        <div class="card h-100 shadow-sm border-0 bg-light">
+                            <div class="card-body p-3 d-flex flex-column justify-content-between">
+                                <div>
+                                    <div class="mb-1" style="font-size: 1.5rem;">🌅</div>
+                                    <div class="h5 mb-0 fw-bold">{{ report.metadata.date }}</div>
+                                    <div class="text-uppercase fw-bold text-warning small">Session Window</div>
+                                </div>
+                                <div>
+                                    <hr class="my-2 opacity-25">
+                                    <div class="small">
+                                        <strong>Rise:</strong> {{ report.metadata.sunrise }} | 
+                                        <strong>Set:</strong> {{ report.metadata.sunset }}
+                                    </div>
+                                    <div class="fw-bold text-truncate mt-1" style="font-size: 0.85rem;">
+                                        {{ report.metadata.status }}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
                 </div>
 
                 <!-- AI VIBE SECTION -->
