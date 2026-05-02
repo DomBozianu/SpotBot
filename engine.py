@@ -306,6 +306,9 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     now_local = arrow.now(tz_name)
     current_hour_idx = now_local.hour
 
+    last_updated = now_local.format('HH:mm')
+    today_date = now_local.format('ddd, MMM DD')
+
     # --- 2. Current Wind ---
     current = weather.Current()
     app_temp = current.Variables(4).Value()
@@ -316,8 +319,8 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     wind_deg = current.Variables(2).Value()
     gust_spd = current.Variables(3).Value()
     
-    last_updated = arrow.now('Europe/London').format('HH:mm')
-    today_date = arrow.now('Europe/London').format('ddd, MMM DD')
+    #last_updated = arrow.now('Europe/London').format('HH:mm')
+    #today_date = arrow.now('Europe/London').format('ddd, MMM DD')
     
     beaufort = get_beaufort(wind_spd)
     
@@ -332,6 +335,18 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     daily = weather.Daily()
     sunrise = datetime.fromtimestamp(float(daily.Variables(0).ValuesInt64AsNumpy()[0])).strftime("%H:%M")
     sunset = datetime.fromtimestamp(float(daily.Variables(1).ValuesInt64AsNumpy()[0])).strftime("%H:%M")
+    # After defining sunrise/sunset strings...
+    sunset_obj = arrow.get(sunset, 'HH:mm')
+    sunset_today = now_local.replace(hour=sunset_obj.hour, minute=sunset_obj.minute)
+
+    if now_local > sunset_today:
+        sun_status = "Sun has set"
+    else:
+        diff_sun = sunset_today - now_local
+        if diff_sun.seconds / 3600 < 1:
+            sun_status = "✨ Golden Hour!"
+        else:
+            sun_status = f"{diff_sun.seconds // 3600}h {(diff_sun.seconds % 3600) // 60}m left"
 
     rel_wind = get_relative_wind(wind_deg, spot.get('shoreline_bearing'))
     dir_info = get_compass_info(wind_deg)
@@ -344,7 +359,6 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     # Water temp comes from the hourly marine array; index by current hour
     m_hourly = marine.Hourly()
     w_temp_arr = m_hourly.Variables(0).ValuesAsNumpy()
-    now_local = arrow.now(tz_name)
     current_hour_idx = now_local.hour    
     if w_temp_arr.ndim == 0:
         w_temp = float(w_temp_arr)
@@ -352,6 +366,7 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
         w_temp = float(w_temp_arr[current_hour_idx])
 
     wave_pwr_val, wave_pwr_desc = calculate_wave_power(wave_h, wave_p)
+    
     
     # --- 4. Hourly Wind Trend & 12h Forecast ---
     hourly = weather.Hourly()
@@ -384,11 +399,6 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     tidal_flow = "Low"
     next_tide_obj = None
     tide_phase = "Unknown"
-    
-    raw_tz = weather.Timezone()
-    tz_name = raw_tz.decode('utf-8') if isinstance(raw_tz, bytes) else raw_tz
-    tz_name = tz_name or 'Europe/London'
-    now_local = arrow.now(tz_name)
 
     if tides:
         # Benchmark for the whole week
@@ -440,23 +450,6 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
         if ratio > 0.85: tide_phase = "Springs"
         elif ratio < 0.60: tide_phase = "Neaps"
         else: tide_phase = "Mid-Cycle"
-
-    # --- 6. Sun / Daylight Logic ---
-    now_local = arrow.now(tz_name)
-    sunset_obj = arrow.get(sunset, 'HH:mm')
-    # Set the date to today so the math works
-    sunset_today = now_local.replace(hour=sunset_obj.hour, minute=sunset_obj.minute)
-
-    if now_local > sunset_today:
-        sun_status = "Sun has set"
-    else:
-        diff_sun = sunset_today - now_local
-        sun_hours = diff_sun.seconds // 3600
-        sun_mins = (diff_sun.seconds % 3600) // 60
-        if sun_hours < 1:
-            sun_status = "✨ Golden Hour!"
-        else:
-            sun_status = f"{sun_hours}h {sun_mins}m left"
 
     # --- 6. Sendiness Score, Best Session Window, Wetsuit ---
     sendiness_score, sendiness_label = get_sendiness_score(wind_spd, rel_wind)
