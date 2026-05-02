@@ -35,7 +35,8 @@ async def home(request: Request):
             "user_level": level,
             "all_spots": SPOTS,
             "kb_beaufort": KNOWLEDGE["beaufort_scale"],
-            "kb_glossary": KNOWLEDGE["glossary"]
+            "kb_glossary": KNOWLEDGE["glossary"],
+            "kb_sail_matrix": KNOWLEDGE["sail_matrix"]
         }
     )
 

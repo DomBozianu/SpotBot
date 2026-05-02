@@ -94,10 +94,13 @@ def get_compass_info(degrees):
 def get_weather_desc(code):
     wmo_codes = {
         0: "Clear skies", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
-        45: "Foggy", 48: "Rime fog", 51: "Light drizzle", 61: "Slight rain",
-        63: "Moderate rain", 71: "Slight snow", 80: "Rain showers", 95: "Thunderstorms"
+        45: "Foggy", 48: "Rime fog", 51: "Light drizzle", 53: "Moderate drizzle", 
+        61: "Slight rain", 63: "Moderate rain", 71: "Slight snow", 80: "Rain showers", 
+        95: "Thunderstorms"
     }
-    return wmo_codes.get(code, f"Code {code}")
+    # Convert to int to handle float codes like 53.0
+    code_int = int(code) if code is not None else 0
+    return wmo_codes.get(code_int, f"Weather code {code_int}")
 
 def get_sendiness_score(wind_knots, wind_relative):
     """
@@ -215,6 +218,19 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
         demo_score, demo_label = get_sendiness_score(demo_wind, demo_relative)
         demo_session = {"start": "14:00", "avg_knots": 24.5}
         demo_wetsuit = get_wetsuit_rec(12)
+        
+        # Mock 12h forecast for demo charts - more realistic wind pattern
+        demo_forecast = []
+        # Realistic afternoon wind pattern: builds, peaks, then drops
+        base_speeds = [24, 26, 28, 27, 25, 23, 21, 19, 17, 16, 15, 14]
+        for i, speed in enumerate(base_speeds):
+            demo_forecast.append({
+                "hour": f"{(14 + i) % 24:02d}:00",
+                "speed": float(speed + (i % 3 - 1) * 0.5),  # Add slight variation
+                "gust": float(speed + 5 + (i % 2)),  # Variable gust strength
+                "code": 1 if i < 8 else 2  # Clear then partly cloudy
+            })
+        
         return {
             "metadata": {
                 "spot_name": "🌟 DEMO: Epic Peak",
@@ -223,7 +239,14 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
                 "last_updated": "Live",
                 "sunrise": "06:00",
                 "sunset": "20:30",
-                "tide_list": []
+                "tide_list": [
+                    {"date": "Fri, May 02", "time": "16:30", "type": "High Tide", "height": 4.2},
+                    {"date": "Fri, May 02", "time": "22:45", "type": "Low Tide", "height": 0.8},
+                    {"date": "Sat, May 03", "time": "04:15", "type": "High Tide", "height": 4.1},
+                    {"date": "Sat, May 03", "time": "10:30", "type": "Low Tide", "height": 0.9},
+                    {"date": "Sat, May 03", "time": "16:45", "type": "High Tide", "height": 4.0},
+                    {"date": "Sat, May 03", "time": "23:00", "type": "Low Tide", "height": 1.0}
+                ]
             },
             "live": {
                 "wind_knots": demo_wind,
@@ -252,7 +275,7 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
                 "sendiness_label": demo_label,
                 "best_session": demo_session,
             },
-            "forecast_12h": [],
+            "forecast_12h": demo_forecast,
             "local_knowledge": "Perfect cross-shore conditions. Watch the sandbar at low tide."
         }
 
@@ -462,71 +485,107 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
 async def get_ai_recommendation(report, user_weight, spot_key, user_level):
     """
     Calls the LLM to generate the Local Legend's advice.
-    Loads the gear chart and spot knowledge as context so the AI can give
-    specific, grounded recommendations rather than generic waffle.
+    Loads comprehensive windsurfing knowledge to ensure physically accurate recommendations.
     """
     try:
         base_path = Path(__file__).parent / "spotbot_knowledge"
+        
+        # Load all knowledge sources
         gear_kb = (base_path / "gear" / "windsurf_chart.txt").read_text()
-
-        # Load spot knowledge — fall back gracefully if the file is missing
+        fundamentals_kb = (base_path / "general" / "windsurfing_fundamentals.txt").read_text()
+        
+        with open(base_path / "general" / "knowledge_base.json", 'r') as f:
+            general_kb = json.load(f)
+        
         spot_kb_path = base_path / "spots" / f"{spot_key}.txt"
         spot_kb = spot_kb_path.read_text() if spot_kb_path.exists() else "No local knowledge available."
 
         metadata = report.get('metadata', {})
         spot_name = metadata.get('spot_name', 'The Beach')
         live = report.get('live', {})
+        forecast = report.get('forecast_12h', [])
 
         # Skill-based buoyancy: novices need more float, advanced riders go smaller
         buoyancy_mod = 40 if user_level == "novice" else 20 if user_level == "advanced" else 30
 
-        # Pull the new fields so the Legend can reference them
+        # Current conditions
+        wind_now = live.get('wind_knots', 0)
         wetsuit = live.get('wetsuit_rec', 'Unknown')
         best_session = live.get('best_session')
-        session_line = (
-            f"Best 3-hour window: {best_session['start']} averaging {best_session['avg_knots']}kts."
-            if best_session else "No clear session window in the next 12 hours."
-        )
+        
+        # Forecast summary for AI context
+        if forecast:
+            forecast_summary = f"Next 12h: {forecast[0]['speed']}-{max(h['speed'] for h in forecast[:6])}kts"
+            if best_session:
+                forecast_summary += f". Best window: {best_session['start']} (~{best_session['avg_knots']}kts)"
+        else:
+            forecast_summary = "No forecast data available"
 
-        prompt = f"""
-ROLE: You are the 'Local Legend' — a salty, experienced windsurfer who knows this coast inside out.
-Talk like a sailor. Be brief, direct, and useful. No waffle.
+        # Calculate actual board volume for the user's weight
+        user_weight_kg = int(user_weight)
+        
+        # Build a much cleaner, more focused prompt
+        prompt = f"""You are the Local Legend - an expert windsurfer giving practical advice to a {user_level} level rider ({user_weight}kg).
 
-SPOT: {spot_name}
-USER LEVEL: {user_level}
-RIDER WEIGHT: {user_weight}kg
-CONDITIONS: {live.get('wind_knots')}kts, F{live.get('beaufort_f')} ({live.get('beaufort_name')}), gusts {live.get('gusts_knots')}kts
-WIND DIRECTION: {live.get('wind_relative')}
-WAVES: {live.get('waves_m')}m, {live.get('wave_power_desc')} power
-WATER TEMP: {live.get('water_temp')}°C
-SESSION WINDOW: {session_line}
+CURRENT CONDITIONS:
+Spot: {spot_name}
+Wind: {wind_now}kts, F{live.get('beaufort_f')} ({live.get('beaufort_name')}), gusts {live.get('gusts_knots')}kts
+Direction: {live.get('wind_relative')} (trend: {live.get('wind_trend')})
+Waves: {live.get('waves_m')}m, {live.get('wave_power_desc')} power
+Water: {live.get('water_temp')}°C
+Forecast: {forecast_summary}
 
-GEAR KNOWLEDGE BASE:
-{gear_kb}
+WINDSURFING PHYSICS RULES:
+- Below 12kts: Too light for practical windsurfing. Recommend SUP or foil only.
+- 12-15kts: Marginal conditions. Need huge gear (7-9m sails, {user_weight_kg + 50}L+ boards).
+- 15kts+: Proper windsurfing. Use sail matrix and adjust for discipline.
 
-LOCAL SPOT KNOWLEDGE:
-{spot_kb}
+SAIL MATRIX FOR {user_weight}KG RIDER:
+- 10-15kts: 7.0-7.5m sail
+- 15-20kts: 6.0-6.5m sail  
+- 20-25kts: 5.0-5.5m sail
+- 25-30kts: 4.2-4.7m sail
+- 30kts+: 3.7-4.2m sail
 
-RULES:
-1. If wind < 10kts: SENDINESS 1/10. Tell them to go Paddleboarding or Foil. STOP THERE.
-2. If wind >= 10kts: use the Sail Size Matrix from the gear knowledge base to pick the right sail.
-3. Board Volume = {user_weight} + {buoyancy_mod}L (adjusted for {user_level} level).
-4. Always recommend the wetsuit: {wetsuit}
-5. Mention the best session window if there is one.
-6. One line of local knowledge relevant to today's conditions.
-7. No mention of 'the logic', 'the math', or 'the rules'. Just talk like a sailor.
+BOARD VOLUMES FOR {user_weight}KG RIDER:
+- Light wind (12-15kts): {user_weight_kg + 50}L (e.g. {user_weight_kg + 50}L board)
+- Moderate wind (15-25kts): {user_weight_kg + 20}L (e.g. {user_weight_kg + 20}L board)  
+- Strong wind (25kts+): {user_weight_kg + 10}L (e.g. {user_weight_kg + 10}L board)
+- Wave sailing: Reduce by 10-20L for maneuverability
 
-FORMAT (use exactly this):
-SENDINESS: X/10
-GEAR: [sail size]m sail, [board volume]L board.
-WETSUIT: [recommendation]
-SESSION: [best window or advice]
-THE VIBE: [2-3 sentences of salty expert commentary]
+DISCIPLINES:
+- Waves 1.5m+ & cross-shore = Wave sailing (smaller gear for control)
+- Flat water & 20kts+ = Speed sailing  
+- General conditions = Freeride
+- Light wind = Learning/freeride only
+
+LOCAL KNOWLEDGE: {spot_kb[:200]}
+
+RESPONSE FORMAT:
+If wind < 12kts: "SENDINESS: 1-2/10. Too light for windsurfing - try SUP or foil setup instead."
+If wind 12-15kts: Give marginal advice with big gear
+If wind 15kts+: Give full session advice
+
+EXAMPLE GOOD RESPONSES:
+"SENDINESS: 8/10
+GEAR: 4.7m sail, 90L board
+DISCIPLINE: Wave sailing - perfect cross-shore conditions  
+WETSUIT: {wetsuit}
+SESSION: Hit the water at 14:00 for best conditions
+THE VIBE: Epic wave day! Cross-shore wind and clean power - watch the sandbar at low tide."
+
+CRITICAL RULES:
+- Give ACTUAL board volumes (e.g. "90L board" not formulas)
+- If you say "too light" or SENDINESS 1-2, do NOT recommend windsurfing gear
+- Never show technical formatting or backend calculations
+- Keep it conversational and practical
+- Conservative recommendations - better to say "too light" than recommend marginal gear
 """
 
         response = await client.chat.completions.create(
             model="meta-llama/llama-3.1-8b-instruct",
-            messages=[{"role": "system", "content": prompt}]
+            messages=[{"role": "system", "content": prompt}],
+            temperature=0.2  # Even lower for maximum consistency
         )
         return response.choices[0].message.content
 

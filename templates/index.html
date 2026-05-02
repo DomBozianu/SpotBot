@@ -115,7 +115,6 @@
                             <span class="badge bg-{{ badge_color }} mt-1" style="font-size: 0.85rem;">
                                 {{ report.live.sendiness_label }} {{ report.live.sendiness_score }}/10
                             </span>
-                            <div class="small opacity-50 mt-1">Local Station Data</div>
                         </div>
                     </div>
                 </div>
@@ -231,7 +230,12 @@
 
                 <!-- AI VIBE SECTION -->
                 <div class="legend-box p-4 mb-4 bg-white border-start border-4 border-primary shadow-sm rounded">
-                    <h5 class="fw-bold text-primary mb-2">🗨️ The Local Legend says:</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h5 class="fw-bold text-primary mb-0">🗨️ The Local Legend says:</h5>
+                        <a href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#gearModal" class="btn btn-sm btn-outline-primary">
+                            ⚙️ Gear Guide
+                        </a>
+                    </div>
                     <p class="lead mb-0" id="vibeDisplay" style="font-style: italic;">
                         Checking the conditions... 🧙‍♂️
                     </p>
@@ -338,6 +342,69 @@
     </div>
 </div>
 {% endif %}
+
+<!-- GEAR GUIDE MODAL: Sail Size Matrix -->
+{% if report %}
+<div class="modal fade" id="gearModal" tabindex="-1" aria-labelledby="gearModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="gearModalLabel">⚙️ Gear Guide | Sail Size Matrix</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                
+                <!-- Current rider highlight -->
+                <div class="p-4 bg-light border-bottom">
+                    <h6 class="fw-bold mb-1 text-success">Your Profile: {{ user_weight }}kg, {{ user_level|title }} Level</h6>
+                    <small class="text-muted">Board Volume: Weight + {{ 40 if user_level == 'novice' else 20 if user_level == 'advanced' else 30 }}L = {{ user_weight|int + (40 if user_level == 'novice' else 20 if user_level == 'advanced' else 30) }}L</small>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" style="vertical-align: middle;">
+                        <thead class="table-dark">
+                            <tr>
+                                <th class="ps-3">Rider Weight</th>
+                                <th>10-15 kts</th>
+                                <th>15-20 kts</th>
+                                <th>20-25 kts</th>
+                                <th>25-30 kts</th>
+                                <th class="pe-3">30+ kts</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in kb_sail_matrix %}
+                            {% set is_user_weight = (user_weight|int >= 55 and user_weight|int <= 65 and row.weight_range == "55-65kg") or
+                                                   (user_weight|int >= 65 and user_weight|int <= 75 and row.weight_range == "65-75kg") or
+                                                   (user_weight|int >= 75 and user_weight|int <= 85 and row.weight_range == "75-85kg") or
+                                                   (user_weight|int >= 85 and user_weight|int <= 95 and row.weight_range == "85-95kg") or
+                                                   (user_weight|int > 95 and row.weight_range == "95kg+") %}
+                            <tr {% if is_user_weight %}class="table-success fw-bold" style="border-left: 5px solid #198754;"{% endif %}>
+                                <td class="ps-3"><strong>{{ row.weight_range }}</strong></td>
+                                <td>{{ row["10_15kts"] }}</td>
+                                <td>{{ row["15_20kts"] }}</td>
+                                <td>{{ row["20_25kts"] }}</td>
+                                <td>{{ row["25_30kts"] }}</td>
+                                <td class="pe-3">{{ row["30_plus_kts"] }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="p-3 bg-light border-top">
+                    <small class="text-muted">
+                        <strong>Board Volume Guide:</strong> Novice = Weight + 40L | Intermediate = Weight + 30L | Advanced = Weight + 20L
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-success" data-bs-dismiss="modal">Got it</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {# Data element: passes report data to JS via data attributes.
    Keeps Jinja syntax out of script tags, fixing VS Code false JS errors. #}
 {% if report %}
@@ -420,15 +487,19 @@
                     type: 'box',
                     xMin: startIdx,
                     xMax: Math.min(startIdx + 2, windData.length - 1),
-                    backgroundColor: 'rgba(25, 135, 84, 0.15)',
-                    borderColor: 'rgba(25, 135, 84, 0.5)',
+                    backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                    borderColor: 'rgba(25, 135, 84, 0.4)',
                     borderWidth: 1,
                     label: {
                         display: true,
-                        content: `Best Window ~${bestSession.avg_knots}kts`,
-                        position: 'start',
+                        content: `Best: ${bestSession.avg_knots}kts`,
+                        position: 'end',
+                        yAdjust: -20,
                         color: '#198754',
-                        font: { size: 11 }
+                        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                        font: { size: 10, weight: 'bold' },
+                        padding: 4,
+                        borderRadius: 3
                     }
                 };
             }
