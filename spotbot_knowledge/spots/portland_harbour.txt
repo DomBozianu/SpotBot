@@ -1,5 +1,7 @@
 Spot Name: Portland Harbour (Weymouth Harbour)
 
+Tide Flow: Flood flows NORTH (in), Ebb flows SOUTH (out).
+
 The Vibe & Disciplines
 
     Disciplines: Slalom, Freestyle, Speed, IQ Foil, Bump and Jump (in Easterlies).

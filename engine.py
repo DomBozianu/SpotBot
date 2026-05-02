@@ -1,6 +1,5 @@
 import os
 import arrow
-import requests
 import requests_cache
 import openmeteo_requests
 from retry_requests import retry
@@ -27,7 +26,8 @@ retry_session = retry(cache_session, retries=5)
 openmeteo = openmeteo_requests.Client(session=retry_session)
 
 def load_spots():
-    spots_path = Path(__file__).parent / "spots.json"
+    # spots.json lives inside the knowledge base folder for tidiness
+    spots_path = Path(__file__).parent / "spotbot_knowledge" / "spots.json"
     if spots_path.exists():
         with open(spots_path, "r") as f:
             return json.load(f)
@@ -99,6 +99,79 @@ def get_weather_desc(code):
     }
     return wmo_codes.get(code, f"Code {code}")
 
+def get_sendiness_score(wind_knots, wind_relative):
+    """
+    Calculates a 1-10 'Sendiness' score based on wind speed and direction quality.
+    This is the go/no-go signal — higher = more sendy.
+    Wind direction multiplier: Cross-shore is ideal, Offshore is dangerous, Onshore is meh.
+    """
+    # Base score from wind speed
+    if wind_knots < 8:    base = 1
+    elif wind_knots < 12: base = 3
+    elif wind_knots < 17: base = 5
+    elif wind_knots < 22: base = 6
+    elif wind_knots < 28: base = 8
+    elif wind_knots < 36: base = 9
+    else:                 base = 10
+
+    # Direction quality modifier
+    if "Cross-shore" in wind_relative:   modifier = 1    # Perfect
+    elif "Cross-on" in wind_relative:    modifier = 0    # Decent
+    elif "Onshore" in wind_relative:     modifier = -1   # Choppy but rideable
+    elif "Offshore" in wind_relative:    modifier = -2   # Dangerous
+    else:                                modifier = 0
+
+    score = max(1, min(10, base + modifier))
+
+    # Label for the UI badge
+    if score <= 3:   label = "Stay Home"
+    elif score <= 5: label = "Marginal"
+    elif score <= 7: label = "Good Session"
+    elif score <= 9: label = "Send It"
+    else:            label = "NUKING 🔥"
+
+    return score, label
+
+
+def get_best_session_window(trend_12h):
+    """
+    Scans the 12-hour forecast and finds the best consecutive 3-hour block.
+    'Best' = highest average wind speed that stays below gale force (34kts).
+    Returns the start hour string and average speed, or None if no good window exists.
+    """
+    if len(trend_12h) < 3:
+        return None
+
+    best_avg = 0
+    best_start = None
+
+    for i in range(len(trend_12h) - 2):
+        window = trend_12h[i:i+3]
+        speeds = [h['speed'] for h in window]
+        avg = sum(speeds) / 3
+
+        # Sweet spot: above 15kts (planing) and below 34kts (gale)
+        if 15 <= avg <= 34 and avg > best_avg:
+            best_avg = avg
+            best_start = window[0]['hour']
+
+    if best_start is None:
+        return None
+
+    return {"start": best_start, "avg_knots": round(best_avg, 1)}
+
+
+def get_wetsuit_rec(water_temp_c):
+    """
+    Returns a wetsuit recommendation string based on water temperature.
+    Thresholds match the gear knowledge base (windsurf_chart.txt Section 5).
+    """
+    if water_temp_c >= 19:   return "2mm Shorty"
+    elif water_temp_c >= 14: return "3/2mm Full Suit"
+    elif water_temp_c >= 10: return "4/3mm + Booties"
+    else:                    return "5/4mm Hooded + Gloves + Booties"
+
+
 def fetch_spot_data(lat, lon):
     weather_params = {
         "latitude": lat, "longitude": lon,
@@ -110,6 +183,7 @@ def fetch_spot_data(lat, lon):
     marine_params = {
         "latitude": lat, "longitude": lon,
         "current": ["wave_height", "wave_period"],
+        "hourly": ["sea_surface_temperature"],
         "timezone": "auto",
         "length_unit": "metric"
     }
@@ -123,79 +197,119 @@ def fetch_tide_data(station_id):
     url = f"https://admiraltyapi.azure-api.net/uktidalapi/api/V1/Stations/{station_id}/TidalEvents"
     headers = {"Ocp-Apim-Subscription-Key": api_key}
     try:
-        # Change 'requests.get' to 'cache_session.get'
         response = cache_session.get(url, headers=headers, timeout=3)
         if response.status_code == 200:
             return response.json()
     except: return []
     return []
 
-def get_tide_phase(tide_list):
-    """Calculates if we are in Spring or Neap based on the daily range."""
-    if len(tide_list) < 2:
-        return "Unknown"
-    
-    # Get all heights from the current list
-    heights = [t['height'] for t in tide_list]
-    daily_range = max(heights) - min(heights)
-    
-    # These thresholds vary by location, but for the UK:
-    # Large range = Springs, Small range = Neaps
-    if daily_range > 4.5: return "Springs"
-    if daily_range < 2.5: return "Neaps"
-    return "Mid-Cycle"
-
-async def get_shred_report(spot_key: str, user_weight: str = "75"):
+async def get_shred_report(spot_key: str, user_weight: str = "75", level="intermediate"):
     spot = SPOTS.get(spot_key)
     if not spot: return None
+    # --- DEMO / PRESENTATION MODE ---
+    # Hardcoded "nuking" conditions so demos always look great regardless of real weather.
+    # All fields must match the live report structure exactly.
+    if spot_key == "demo_epic":
+        demo_wind = 26.5
+        demo_relative = "💎 Cross-shore"
+        demo_score, demo_label = get_sendiness_score(demo_wind, demo_relative)
+        demo_session = {"start": "14:00", "avg_knots": 24.5}
+        demo_wetsuit = get_wetsuit_rec(12)
+        return {
+            "metadata": {
+                "spot_name": "🌟 DEMO: Epic Peak",
+                "status": "Nuking!",
+                "date": "Friday Demo",
+                "last_updated": "Live",
+                "sunrise": "06:00",
+                "sunset": "20:30",
+                "tide_list": []
+            },
+            "live": {
+                "wind_knots": demo_wind,
+                "wind_color": "sweet",
+                "beaufort_f": 6,
+                "beaufort_name": "Strong Breeze",
+                "beaufort_desc": "Large branches in motion; whistling in wires.",
+                "wind_dir_name": "S-West",
+                "wind_dir": 225,
+                "wind_arrow": "↗️",
+                "wind_relative": demo_relative,
+                "wind_trend": "Building",
+                "gusts_knots": 34.0,
+                "waves_m": 2.5,
+                "wave_period": 11.0,
+                "wave_power": 34.4,
+                "wave_power_desc": "Clean",
+                "tide_display": "📈 Rising",
+                "next_tide_info": "High @ 16:30 (2h remaining)",
+                "tide_phase": "Springs",
+                "tidal_flow": "Strong",
+                "sun_status": "✨ Golden Hour!",
+                "water_temp": 12,
+                "wetsuit_rec": demo_wetsuit,
+                "sendiness_score": demo_score,
+                "sendiness_label": demo_label,
+                "best_session": demo_session,
+            },
+            "forecast_12h": [],
+            "local_knowledge": "Perfect cross-shore conditions. Watch the sandbar at low tide."
+        }
 
-    # 1. Fetch
+    # --- 1. Fetch weather, marine, and tide data ---
     weather, marine = fetch_spot_data(spot['lat'], spot['lon'])
     tides = fetch_tide_data(spot['tide_id'])
     
-    # 2. Current Weather
+    # --- 2. Current Wind ---
     current = weather.Current()
     wind_spd = current.Variables(1).Value()
     wind_deg = current.Variables(2).Value()
     gust_spd = current.Variables(3).Value()
     
-    # FIX: Header Paradox - use actual time for 'Last Updated'
     last_updated = arrow.now('Europe/London').format('HH:mm')
     today_date = arrow.now('Europe/London').format('ddd, MMM DD')
     
     beaufort = get_beaufort(wind_spd)
     
-    # Wind UI Class
+    # Wind colour drives the UI badge colour
     if wind_spd < 13: wind_color = "light"
     elif wind_spd < 19: wind_color = "green"
     elif wind_spd < 26: wind_color = "sweet"
     elif wind_spd < 36: wind_color = "heavy"
     else: wind_color = "nuke"
 
-    # Sun Times
+    # Sun times from the daily forecast block
     daily = weather.Daily()
     sunrise = datetime.fromtimestamp(float(daily.Variables(0).ValuesInt64AsNumpy()[0])).strftime("%H:%M")
     sunset = datetime.fromtimestamp(float(daily.Variables(1).ValuesInt64AsNumpy()[0])).strftime("%H:%M")
 
-    # Relative Wind
     rel_wind = get_relative_wind(wind_deg, spot.get('shoreline_bearing'))
     dir_info = get_compass_info(wind_deg)
     
-    # Marine
+    # --- 3. Marine (Waves & Water Temp) ---
     m_curr = marine.Current()
     wave_h = m_curr.Variables(0).Value()
     wave_p = m_curr.Variables(1).Value()
-    
-    power_val = wave_h * wave_p
+
+    # Water temp comes from the hourly marine array; index by current hour
+    m_hourly = marine.Hourly()
+    w_temp_arr = m_hourly.Variables(0).ValuesAsNumpy()
+    if w_temp_arr.ndim == 0:
+        w_temp = float(w_temp_arr)
+    else:
+        current_hour_idx = datetime.now().hour
+        w_temp = float(w_temp_arr[current_hour_idx])
+
     wave_pwr_val, wave_pwr_desc = calculate_wave_power(wave_h, wave_p)
     
-    # Hourly & Trend
+    # --- 4. Hourly Wind Trend & 12h Forecast ---
     hourly = weather.Hourly()
     current_hour_idx = datetime.now().hour
     all_speeds = hourly.Variables(0).ValuesAsNumpy()
     all_gusts = hourly.Variables(1).ValuesAsNumpy()
     all_codes = hourly.Variables(2).ValuesAsNumpy()
 
+    # Simple trend: compare now vs 3 hours ahead
     future_wind = all_speeds[(current_hour_idx + 3) % 24]
     if future_wind > wind_spd + 2: wind_trend = "Building"
     elif future_wind < wind_spd - 2: wind_trend = "Dropping"
@@ -211,11 +325,13 @@ async def get_shred_report(spot_key: str, user_weight: str = "75"):
             "code": int(all_codes[idx])
         })
 
-    # 4. Tides (Scalable & Fixed)
+    # --- 5. Tides ---
+    # Uses the Admiralty API data. Falls back gracefully if no API key is set.
+    # THE RULE OF TWELFTHS: tidal flow is strongest 2-4 hours from high/low.
     tide_list = []
     next_tide_info = "Check tomorrow"
     tide_display = "Stable"
-    tidal_flow = "Low"  # Default
+    tidal_flow = "Low"
     next_tide_obj = None
     tide_phase = "Unknown"
     
@@ -275,9 +391,8 @@ async def get_shred_report(spot_key: str, user_weight: str = "75"):
         elif ratio < 0.60: tide_phase = "Neaps"
         else: tide_phase = "Mid-Cycle"
 
-    # 5. Sun / Daylight Logic
+    # --- 5. Sun / Daylight Logic ---
     now_local = arrow.now(tz_name)
-    # 'sunset' was defined earlier in the function from weather.Sunset()
     sunset_obj = arrow.get(sunset, 'HH:mm')
     # Set the date to today so the math works
     sunset_today = now_local.replace(hour=sunset_obj.hour, minute=sunset_obj.minute)
@@ -288,13 +403,17 @@ async def get_shred_report(spot_key: str, user_weight: str = "75"):
         diff_sun = sunset_today - now_local
         sun_hours = diff_sun.seconds // 3600
         sun_mins = (diff_sun.seconds % 3600) // 60
-        
         if sun_hours < 1:
             sun_status = "✨ Golden Hour!"
         else:
             sun_status = f"{sun_hours}h {sun_mins}m left"
 
-    # 5. Wisdom
+    # --- 6. Sendiness Score, Best Session Window, Wetsuit ---
+    sendiness_score, sendiness_label = get_sendiness_score(wind_spd, rel_wind)
+    best_session = get_best_session_window(trend_12h)
+    wetsuit_rec = get_wetsuit_rec(w_temp)
+
+    # --- 7. Local Knowledge ---
     wisdom = "No local knowledge found."
     path = Path(__file__).parent / "spotbot_knowledge" / "spots" / spot['knowledge_file']
     if path.exists():
@@ -302,7 +421,7 @@ async def get_shred_report(spot_key: str, user_weight: str = "75"):
 
     return {
         "metadata": {
-            "spot_name": spot['name'], 
+            "spot_name": spot['name'],
             "status": get_weather_desc(current.Variables(0).Value()),
             "date": today_date,
             "last_updated": last_updated,
@@ -314,7 +433,7 @@ async def get_shred_report(spot_key: str, user_weight: str = "75"):
             "wind_knots": float(round(wind_spd, 1)),
             "wind_color": wind_color,
             "beaufort_f": beaufort['f'],
-            "beaufort_name": beaufort['name'],  # NEW: Official name
+            "beaufort_name": beaufort['name'],
             "beaufort_desc": beaufort['desc'],
             "wind_dir_name": dir_info['word'],
             "wind_dir": int(wind_deg),
@@ -331,38 +450,85 @@ async def get_shred_report(spot_key: str, user_weight: str = "75"):
             "tide_phase": tide_phase,
             "tidal_flow": tidal_flow,
             "sun_status": sun_status,
-            "vibe": "The legend is checking the horizon..."
+            "water_temp": int(round(w_temp)),
+            "wetsuit_rec": wetsuit_rec,
+            "sendiness_score": sendiness_score,
+            "sendiness_label": sendiness_label,
+            "best_session": best_session,
         },
         "forecast_12h": trend_12h,
         "local_knowledge": wisdom
     }
-async def get_ai_recommendation(report, user_weight):
+async def get_ai_recommendation(report, user_weight, spot_key, user_level):
+    """
+    Calls the LLM to generate the Local Legend's advice.
+    Loads the gear chart and spot knowledge as context so the AI can give
+    specific, grounded recommendations rather than generic waffle.
+    """
     try:
-        from pathlib import Path
-        gear_path = Path(__file__).parent / "spotbot_knowledge" / "gear" / "windsurf_chart.txt"
-        gear_kb = gear_path.read_text(encoding='utf-8') if gear_path.exists() else "Use standard physics."
+        base_path = Path(__file__).parent / "spotbot_knowledge"
+        gear_kb = (base_path / "gear" / "windsurf_chart.txt").read_text()
 
+        # Load spot knowledge — fall back gracefully if the file is missing
+        spot_kb_path = base_path / "spots" / f"{spot_key}.txt"
+        spot_kb = spot_kb_path.read_text() if spot_kb_path.exists() else "No local knowledge available."
+
+        metadata = report.get('metadata', {})
+        spot_name = metadata.get('spot_name', 'The Beach')
         live = report.get('live', {})
-        
+
+        # Skill-based buoyancy: novices need more float, advanced riders go smaller
+        buoyancy_mod = 40 if user_level == "novice" else 20 if user_level == "advanced" else 30
+
+        # Pull the new fields so the Legend can reference them
+        wetsuit = live.get('wetsuit_rec', 'Unknown')
+        best_session = live.get('best_session')
+        session_line = (
+            f"Best 3-hour window: {best_session['start']} averaging {best_session['avg_knots']}kts."
+            if best_session else "No clear session window in the next 12 hours."
+        )
+
         prompt = f"""
-        You are the 'Local Legend Master'. Use physics and the following knowledge:
-        {gear_kb}
-        
-        DATA:
-        - Wind: {live.get('wind_knots')} kts (Gusts: {live.get('gusts_knots')})
-        - Waves: {live.get('waves_m')}m
-        - User Weight: {user_weight}kg
-        
-        TASK:
-        1. Start with "SENDINESS: [X]/10".
-        2. Give gear advice (Sail m² and Board L) in 2 salty sentences.
-        """
+ROLE: You are the 'Local Legend' — a salty, experienced windsurfer who knows this coast inside out.
+Talk like a sailor. Be brief, direct, and useful. No waffle.
+
+SPOT: {spot_name}
+USER LEVEL: {user_level}
+RIDER WEIGHT: {user_weight}kg
+CONDITIONS: {live.get('wind_knots')}kts, F{live.get('beaufort_f')} ({live.get('beaufort_name')}), gusts {live.get('gusts_knots')}kts
+WIND DIRECTION: {live.get('wind_relative')}
+WAVES: {live.get('waves_m')}m, {live.get('wave_power_desc')} power
+WATER TEMP: {live.get('water_temp')}°C
+SESSION WINDOW: {session_line}
+
+GEAR KNOWLEDGE BASE:
+{gear_kb}
+
+LOCAL SPOT KNOWLEDGE:
+{spot_kb}
+
+RULES:
+1. If wind < 10kts: SENDINESS 1/10. Tell them to go Paddleboarding or Foil. STOP THERE.
+2. If wind >= 10kts: use the Sail Size Matrix from the gear knowledge base to pick the right sail.
+3. Board Volume = {user_weight} + {buoyancy_mod}L (adjusted for {user_level} level).
+4. Always recommend the wetsuit: {wetsuit}
+5. Mention the best session window if there is one.
+6. One line of local knowledge relevant to today's conditions.
+7. No mention of 'the logic', 'the math', or 'the rules'. Just talk like a sailor.
+
+FORMAT (use exactly this):
+SENDINESS: X/10
+GEAR: [sail size]m sail, [board volume]L board.
+WETSUIT: [recommendation]
+SESSION: [best window or advice]
+THE VIBE: [2-3 sentences of salty expert commentary]
+"""
 
         response = await client.chat.completions.create(
-            model="meta-llama/llama-3.1-8b-instruct", 
+            model="meta-llama/llama-3.1-8b-instruct",
             messages=[{"role": "system", "content": prompt}]
         )
-        return response.choices[0].message.content if response.choices else "The Legend is silent."
+        return response.choices[0].message.content
+
     except Exception as e:
-        print(f"AI Error: {e}")
-        return "The Legend is lost in the fog."
+        return f"The Legend is lost in the fog: {e}"

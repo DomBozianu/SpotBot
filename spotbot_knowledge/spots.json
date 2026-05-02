@@ -30,5 +30,13 @@
         "tide_id": "0451",
         "knowledge_file": "west_kirby.txt",
         "shoreline_bearing": 270
+    },
+    "demo_epic": {
+        "name": "DEMO: Epic Peak",
+        "lat": 50.0,
+        "lon": -2.0,
+        "tide_id": "0451",
+        "knowledge_file": "demo_spot.txt",
+        "shoreline_bearing": 180
     }
 }

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SpotBot | Local Legend</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3/dist/chartjs-plugin-annotation.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
@@ -13,8 +14,12 @@
         .shred-card { border: none; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); background: white; }
         .wind-icon { font-size: 2.2rem; display: block; margin-bottom: 5px; }
         .legend-box { border-left: 5px solid #ffc107; background-color: #fff9e6; border-radius: 8px; }
-        /* Wind Color Classes */
-        .wind-green { color: #198754; } .wind-blue { color: #0d6efd; } .wind-orange { color: #fd7e14; } .wind-red { color: #dc3545; }
+        /* Wind Speed Colour Classes — matched to engine.py wind_color values */
+        .wind-light { color: #6c757d; }   /* < 13kts: grey, not worth it */
+        .wind-green { color: #198754; }   /* 13-18kts: good learning wind */
+        .wind-sweet { color: #0d6efd; }   /* 19-25kts: sweet spot */
+        .wind-heavy { color: #fd7e14; }   /* 26-35kts: heavy, advanced */
+        .wind-nuke  { color: #dc3545; }   /* 36kts+: nuking, experts only */
     </style>
 </head>
 <body>
@@ -30,11 +35,21 @@
         <!-- LEFT COLUMN: MAP & INPUTS -->
         <div class="col-lg-5">
             <div id="map"></div>
+            <!-- Spot data for map markers — read by JS from data attributes, no Jinja inside <script> -->
+            {% for key, details in all_spots.items() %}
+            <div class="spot-marker-data"
+                data-key="{{ key }}"
+                data-lat="{{ details.lat }}"
+                data-lon="{{ details.lon }}"
+                data-name="{{ details.name }}"
+                style="display:none;"></div>
+            {% endfor %}
             <div class="card shred-card p-4 mb-4">
                 <form id="spotForm" action="/" method="get">
+                    <!-- Spot Selection -->
                     <div class="mb-3">
                         <label class="form-label fw-bold">Select Spot</label>
-                        <select name="spot" id="spotSelect" class="form-select form-select-lg">
+                        <select name="spot" class="form-select form-select-lg">
                             <option value="">-- Click map or select --</option>
                             {% for key, details in all_spots.items() %}
                             <option value="{{ key }}" {% if request.query_params.get('spot') == key %}selected{% endif %}>
@@ -44,14 +59,25 @@
                         </select>
                     </div>
                     
+                    <!-- Weight Input -->
                     <div class="mb-3">
                         <label class="form-label fw-bold">Rider Weight (kg)</label>
-                        <input type="number" name="weight" value="{{ user_weight }}" class="form-control" min="30" max="150">
+                        <input type="number" name="weight" value="{{ user_weight }}" class="form-control">
+                    </div>
+                    
+                    <!-- Skill Level Dropdown -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Skill Level</label>
+                        <select name="level" class="form-select">
+                            <option value="novice" {% if user_level == 'novice' %}selected{% endif %}>Novice (Kook)</option>
+                            <option value="intermediate" {% if user_level == 'intermediate' %}selected{% endif %}>Intermediate (Crusher)</option>
+                            <option value="advanced" {% if user_level == 'advanced' %}selected{% endif %}>Advanced (Legend)</option>
+                        </select>
                     </div>
 
-                    <button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn">
+                    <button type="submit" id="submitBtn" class="btn btn-primary btn-lg w-100">
+                        <span id="spinner" class="spinner-border spinner-border-sm d-none me-2" role="status"></span>
                         <span id="btnText">Get Shred Report</span>
-                        <div id="spinner" class="spinner-border spinner-border-sm d-none" role="status"></div>
                     </button>
                 </form>
             </div>
@@ -72,11 +98,24 @@
                             </div>
                         </div>
                         <div class="text-end">
-                            <!-- Displaying the primary status (e.g., "GET OUT THERE" or "STAY HOME") -->
                             <div class="h4 mb-0 fw-bold text-uppercase" style="letter-spacing: 1px;">
                                 {{ report.metadata.status }}
                             </div>
-                            <span class="small opacity-50">Local Station Data</span>
+                            <!-- Sendiness badge: colour-coded go/no-go signal -->
+                            {% set score = report.live.sendiness_score %}
+                            {% if score <= 3 %}
+                                {% set badge_color = "secondary" %}
+                            {% elif score <= 5 %}
+                                {% set badge_color = "warning" %}
+                            {% elif score <= 7 %}
+                                {% set badge_color = "success" %}
+                            {% else %}
+                                {% set badge_color = "danger" %}
+                            {% endif %}
+                            <span class="badge bg-{{ badge_color }} mt-1" style="font-size: 0.85rem;">
+                                {{ report.live.sendiness_label }} {{ report.live.sendiness_score }}/10
+                            </span>
+                            <div class="small opacity-50 mt-1">Local Station Data</div>
                         </div>
                     </div>
                 </div>
@@ -87,32 +126,27 @@
                         <div class="card h-100 shadow-sm border-0 bg-light">
                             <div class="card-body p-3 d-flex flex-column justify-content-between">
                                 <div>
-                                    <!-- Direction Arrow -->
+                                    <div class="text-muted small fw-bold mb-1">WIND</div>
                                     <div class="mb-1">
-                                        <span class="wind-icon" style="font-size: 1.5rem;">{{ report.live.wind_arrow }}</span>
-                                        <!-- Added Cardinal and Degrees here -->
+                                        <span style="font-size: 1.5rem;">{{ report.live.wind_arrow }}</span>
                                         <span class="fw-bold small ms-1">{{ report.live.wind_dir_name }}</span>
                                         <span class="text-muted small">({{ report.live.wind_dir }}°)</span>
                                     </div>
-                                    <!-- Main Speed -->
                                     <div class="h3 mb-0 wind-{{ report.live.wind_color }}">
                                         {{ report.live.wind_knots }}<small class="h6">kts</small>
                                     </div>
-                                    
-                                    <!-- NEW: Gusts moved directly under speed -->
-                                    <div class="text-muted small fw-bold mb-2">
+                                    <div class="text-muted small fw-bold">
                                         Gusts: {{ report.live.gusts_knots }}kts
                                     </div>
-
-                                    <!-- Beaufort: Name only + Info Trigger -->
-                                    <span class="beaufort-text small d-block">
-                                        <strong>F{{ report.live.beaufort_f }}: {{ report.live.beaufort_name }}</strong>
-                                        <a href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#beaufortModal" style="text-decoration:none;">ℹ️</a>                                    </span>
                                 </div>
                                 <div>
                                     <hr class="my-2 opacity-25">
-                                    <div class="small fw-bold">{{ report.live.wind_relative }}</div>
-                                    <div class="text-muted small">Relative to Beach</div>
+                                    <div class="small fw-bold">
+                                        F{{ report.live.beaufort_f }}: {{ report.live.beaufort_name }}
+                                        <a href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#beaufortModal" style="text-decoration:none;">ℹ️</a>
+                                    </div>
+                                    <div class="small fw-bold mt-1">{{ report.live.wind_relative }}</div>
+                                    <div class="text-muted small">Trend: {{ report.live.wind_trend }}</div>
                                 </div>
                             </div>
                         </div>
@@ -124,19 +158,19 @@
                             <div class="card-body p-3 d-flex flex-column justify-content-between">
                                 <div>
                                     <div class="text-muted small fw-bold mb-1">WAVES</div>
-                                    <!-- Primary Stat: Height -->
                                     <div class="h3 mb-0 text-primary">
                                         {{ report.live.waves_m }}<small class="h6">m</small>
                                     </div>
-                                    <!-- Secondary Stat: Power Description -->
-                                    <div class="small text-muted mt-1" title="{{ report.live.wave_power }} kW/m">
-                                        Wave Power: {{ report.live.wave_power_desc }} ({{ report.live.wave_power }})
+                                    <div class="small text-muted mt-1">
+                                        {{ report.live.wave_power_desc }} power
                                     </div>
                                 </div>
                                 <div>
                                     <hr class="my-2 opacity-25">
                                     <div class="small fw-bold">Period: {{ report.live.wave_period }}s</div>
                                     <div class="text-muted small">Wave Interval</div>
+                                    <div class="small fw-bold mt-1">{{ report.live.wave_power }} kW/m</div>
+                                    <div class="text-muted small">Wave Power</div>
                                 </div>
                             </div>
                         </div>
@@ -147,36 +181,48 @@
                         <div class="card h-100 shadow-sm border-0 bg-light">
                             <div class="card-body p-3 d-flex flex-column justify-content-between">
                                 <div>
+                                    <div class="text-muted small fw-bold mb-1">TIDES</div>
                                     <div class="text-info fw-bold">{{ report.live.tide_display }}</div>
-                                    <div class="h5 mb-0">{{ report.live.next_tide_info }}</div>
-                                    <div class="small mt-2 pt-2 border-top">
-                                        <div class="d-flex justify-content-between">
-                                            <span class="text-muted">Tide:</span>
-                                            <span class="fw-bold">{{ report.live.tide_phase }}</span>
-                                        </div>
-                                        <div class="d-flex justify-content-between">
-                                            <span class="text-muted">Flow:</span>
-                                            <span class="fw-bold text-primary">🌊 {{ report.live.tidal_flow }}</span>
-                                        </div>
+                                    <div class="small fw-bold mt-1">{{ report.live.next_tide_info }}</div>
+                                </div>
+                                <div>
+                                    <hr class="my-2 opacity-25">
+                                    <div class="d-flex justify-content-between small">
+                                        <span class="text-muted">Phase:</span>
+                                        <span class="fw-bold">{{ report.live.tide_phase }}</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between small mt-1">
+                                        <span class="text-muted">Flow:</span>
+                                        <span class="fw-bold text-primary">{{ report.live.tidal_flow }}</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between small mt-1">
+                                        <span class="text-muted">Water:</span>
+                                        <span class="fw-bold">{{ report.live.water_temp }}°C</span>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- SESSION WINDOW / DAYLIGHT -->
+                    <!-- DAYLIGHT & ENVIRONMENT CARD -->
                     <div class="col-6 col-md-3">
                         <div class="card h-100 shadow-sm border-0 bg-light">
                             <div class="card-body p-3 d-flex flex-column justify-content-between">
                                 <div>
-                                    <div class="mb-1" style="font-size: 1.5rem;">🌅</div>
-                                    <div class="h6 mb-0 fw-bold">Daylight</div>
-                                    <div class="text-info small fw-bold">{{ report.live.sun_status }}</div>
+                                    <div class="text-muted small fw-bold mb-1">DAYLIGHT</div>
+                                    <div class="h6 fw-bold mb-0">{{ report.live.sun_status }}</div>
+                                    <div class="small text-muted mt-1">
+                                        🌅 {{ report.metadata.sunrise }} — {{ report.metadata.sunset }}
+                                    </div>
                                 </div>
                                 <div>
                                     <hr class="my-2 opacity-25">
-                                    <div class="small"><strong>Rise:</strong> {{ report.metadata.sunrise }}</div>
-                                    <div class="small"><strong>Set:</strong> {{ report.metadata.sunset }}</div>
+                                    <div class="small fw-bold">🩱 Wetsuit:</div>
+                                    <div class="small text-muted">{{ report.live.wetsuit_rec }}</div>
+                                    {% if report.live.best_session %}
+                                    <div class="small fw-bold mt-1">⏱ Best Window:</div>
+                                    <div class="small text-muted">From {{ report.live.best_session.start }} (~{{ report.live.best_session.avg_knots }}kts)</div>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -292,102 +338,184 @@
     </div>
 </div>
 {% endif %}
+{# Data element: passes report data to JS via data attributes.
+   Keeps Jinja syntax out of script tags, fixing VS Code false JS errors. #}
+{% if report %}
+<div id="spotbot-data"
+    data-forecast='{{ report.forecast_12h | tojson }}'
+    data-tides='{{ report.metadata.tide_list | tojson }}'
+    data-best-session='{{ report.live.best_session | tojson }}'
+    style="display:none;">
+</div>
+{% endif %}
+
 <!-- 2. SCRIPTS -->
 <!-- Bootstrap Bundle includes Popper.js which is required for Modals to work -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-    // 1. MAP LOGIC
+    // =========================================================
+    // SECTION 1: MAP
+    // =========================================================
     const map = L.map('map').setView([52.5, -2.5], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
-    const spots = {{ all_spots | tojson }};
-    const currentSpot = "{{ request.query_params.get('spot', '') }}";
-    const markers = {};
+    // Spot data is read from the hidden #spotbot-data element or the select options.
+    // We still need the spots object for map markers — read it from the select element.
+    const spotSelect = document.querySelector('select[name="spot"]');
+    const currentSpot = spotSelect ? spotSelect.value : '';
 
-    for (const [key, spot] of Object.entries(spots)) {
-        const marker = L.marker([spot.lat, spot.lon]).addTo(map);
-        marker.bindPopup(`<strong>${spot.name}</strong>`);
-        markers[key] = marker;
-        marker.on('click', () => { 
-            document.getElementById('spotSelect').value = key; 
-            map.setView([spot.lat, spot.lon], 11); 
+    // Build spots map from the select options + data attributes on markers
+    // (spots lat/lon are embedded via data attributes below)
+    const spotMarkers = {};
+
+    // =========================================================
+    // SECTION 2: SPOT MARKERS
+    // Spots are rendered server-side into data attributes to avoid Jinja-in-JS issues.
+    // =========================================================
+    document.querySelectorAll('.spot-marker-data').forEach(el => {
+        const key = el.dataset.key;
+        const lat = parseFloat(el.dataset.lat);
+        const lon = parseFloat(el.dataset.lon);
+        const name = el.dataset.name;
+
+        const marker = L.marker([lat, lon]).addTo(map);
+        marker.bindPopup(`<strong>${name}</strong>`);
+        spotMarkers[key] = marker;
+
+        marker.on('click', () => {
+            document.querySelector('select[name="spot"]').value = key;
+            map.setView([lat, lon], 11);
+        });
+    });
+
+    if (currentSpot && spotMarkers[currentSpot]) {
+        const m = spotMarkers[currentSpot];
+        map.setView(m.getLatLng(), 12);
+        m.openPopup();
+    }
+
+    // =========================================================
+    // SECTION 3: CHARTS
+    // Data is read from the hidden #spotbot-data div, not from inline Jinja.
+    // =========================================================
+    const dataEl = document.getElementById('spotbot-data');
+
+    if (dataEl) {
+        const windData = JSON.parse(dataEl.dataset.forecast || '[]');
+        const tideData = JSON.parse(dataEl.dataset.tides || '[]').slice(0, 6);
+        const bestSession = JSON.parse(dataEl.dataset.bestSession || 'null');
+
+        // --- Wind Chart ---
+        // If a best session window exists, shade that region on the chart.
+        const windCtx = document.getElementById('windChart').getContext('2d');
+
+        // Build annotation plugin config for the best session highlight
+        let annotations = {};
+        if (bestSession && windData.length > 0) {
+            const startIdx = windData.findIndex(d => d.hour === bestSession.start);
+            if (startIdx !== -1) {
+                annotations.bestWindow = {
+                    type: 'box',
+                    xMin: startIdx,
+                    xMax: Math.min(startIdx + 2, windData.length - 1),
+                    backgroundColor: 'rgba(25, 135, 84, 0.15)',
+                    borderColor: 'rgba(25, 135, 84, 0.5)',
+                    borderWidth: 1,
+                    label: {
+                        display: true,
+                        content: `Best Window ~${bestSession.avg_knots}kts`,
+                        position: 'start',
+                        color: '#198754',
+                        font: { size: 11 }
+                    }
+                };
+            }
+        }
+
+        new Chart(windCtx, {
+            type: 'line',
+            data: {
+                labels: windData.map(d => d.hour),
+                datasets: [
+                    { label: 'Base Wind', data: windData.map(d => d.speed), borderColor: '#0d6efd', tension: 0.3, fill: false },
+                    { label: 'Gusts', data: windData.map(d => d.gust), borderColor: '#dc3545', borderDash: [5, 5], tension: 0.3, fill: false }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { position: 'bottom' },
+                    annotation: { annotations }
+                },
+                scales: { y: { beginAtZero: true, title: { display: true, text: 'Knots' } } }
+            }
+        });
+
+        // --- Tide Chart ---
+        const tideCtx = document.getElementById('tideChart').getContext('2d');
+        new Chart(tideCtx, {
+            type: 'line',
+            data: {
+                labels: tideData.map(t => t.time),
+                datasets: [{
+                    label: 'Height (m)',
+                    data: tideData.map(t => t.height),
+                    borderColor: '#0dcaf0',
+                    backgroundColor: 'rgba(13, 202, 240, 0.2)',
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: tideData.map(t => t.type.toUpperCase().includes('HIGH') ? '#0dcaf0' : '#fff'),
+                    pointRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: { legend: { display: false } }
+            }
         });
     }
 
-    if (currentSpot && spots[currentSpot]) {
-        map.setView([spots[currentSpot].lat, spots[currentSpot].lon], 12);
-        markers[currentSpot].openPopup();
+    // =========================================================
+    // SECTION 4: FORM LOADING STATE
+    // =========================================================
+    const spotForm = document.getElementById('spotForm');
+    if (spotForm) {
+        spotForm.onsubmit = () => {
+            const btnText = document.getElementById('btnText');
+            const spinner = document.getElementById('spinner');
+            const submitBtn = document.getElementById('submitBtn');
+            if (btnText) btnText.innerText = "Consulting the Legend...";
+            if (spinner) spinner.classList.remove('d-none');
+            if (submitBtn) submitBtn.classList.add('disabled');
+        };
     }
 
-    // 2. WIND CHART
-    {% if report %}
-    const windCtx = document.getElementById('windChart').getContext('2d');
-    const windData = {{ report.forecast_12h | tojson }};
-    new Chart(windCtx, {
-        type: 'line',
-        data: {
-            labels: windData.map(d => d.hour),
-            datasets: [
-                { label: 'Base Wind', data: windData.map(d => d.speed), borderColor: '#0d6efd', tension: 0.3, fill: false },
-                { label: 'Gusts', data: windData.map(d => d.gust), borderColor: '#dc3545', borderDash: [5, 5], tension: 0.3, fill: false }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { intersect: false, mode: 'index' },
-            plugins: { legend: { position: 'bottom' } },
-            scales: { y: { beginAtZero: true, title: { display: true, text: 'Knots' } } }
-        }
-    });
-
-    // 3. TIDE CHART
-    const tideCtx = document.getElementById('tideChart').getContext('2d');
-    const tideData = {{ report.metadata.tide_list | tojson }}.slice(0, 6);
-    new Chart(tideCtx, {
-        type: 'line',
-        data: {
-            labels: tideData.map(t => t.time),
-            datasets: [{
-                label: 'Height (m)',
-                data: tideData.map(t => t.height),
-                borderColor: '#0dcaf0',
-                backgroundColor: 'rgba(13, 202, 240, 0.2)',
-                fill: true,
-                tension: 0.4,
-                // Match "HIGH" in uppercase to ensure points are colored
-                pointBackgroundColor: tideData.map(t => t.type.toUpperCase().includes('HIGH') ? '#0dcaf0' : '#fff'),
-                pointRadius: 6
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { intersect: false, mode: 'index' },
-            plugins: { legend: { display: false } }
-        }
-    });
-    {% endif %}
-
-    // 4. AI & LOADING
-    document.getElementById('spotForm').onsubmit = () => {
-        document.getElementById('btnText').innerText = "Consulting the Legend...";
-        document.getElementById('spinner').classList.remove('d-none');
-        document.getElementById('submitBtn').classList.add('disabled');
-    };
-
-    window.addEventListener('load', function() {
+    // =========================================================
+    // SECTION 5: AI VIBE FETCH
+    // Fetches the Legend's advice after page load to avoid blocking the render.
+    // Passes spot, weight, AND level so the AI gets the full picture.
+    // =========================================================
+    window.addEventListener('load', function () {
         const vibeDisplay = document.getElementById('vibeDisplay');
         const urlParams = new URLSearchParams(window.location.search);
         const spot = urlParams.get('spot');
         const weight = urlParams.get('weight') || '75';
-        
+        const level = urlParams.get('level') || 'intermediate';
+
         if (spot && vibeDisplay) {
-            fetch(`/api/vibe?spot=${spot}&weight=${weight}`)
+            fetch(`/api/vibe?spot=${spot}&weight=${weight}&level=${level}`)
                 .then(r => r.json())
-                .then(data => { vibeDisplay.innerText = data.vibe; })
+                .then(data => {
+                    // Preserve line breaks from the Legend's formatted output
+                    vibeDisplay.style.whiteSpace = 'pre-line';
+                    vibeDisplay.innerText = data.vibe;
+                })
                 .catch(() => { vibeDisplay.innerText = "The Legend is lost in the fog."; });
         }
     });

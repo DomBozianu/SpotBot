@@ -1,5 +1,18 @@
 OFFICIAL WINDSURF SESSION KNOWLEDGE BASE (v2.0)
 
+### SECTION 0: THE LULL (0–10 kts)
+
+    No standard windsurfing. Suggest SUP (Paddleboarding) or a 6.0m+ Foil setup.
+
+    Warning: Too light for waterstarts; big boards only.
+    THE BUOYANCY PRINCIPLE:
+
+    Sub-planing (Wind < 12kts): You need "Static Buoyancy." A board must be (Weight + 50L to 100L) to be fun. This is "Longboard/WindSUP" territory (e.g., 180L - 220L).
+
+    Planing (Wind > 15kts): You use "Dynamic Lift." You can use smaller boards (Weight + 30L).
+
+    Sinker (Expert): Anything (Weight + 0L or less).
+
 ### SECTION 1: SAIL SIZE MATRIX (m²)
 | Rider Weight | 10–15 kts | 15–20 kts | 20–25 kts | 25–30 kts | 30+ kts  |
 |--------------|-----------|-----------|-----------|-----------|----------|
@@ -34,3 +47,6 @@ OFFICIAL WINDSURF SESSION KNOWLEDGE BASE (v2.0)
 - 4-6: "Getting there." Good for big kit/practice.
 - 7-9: "STOKE LEVEL HIGH." Ideal conditions for the spot.
 - 10: "Epic but Dangerous." Pros only.
+
+GOLDEN RULE: If the board volume (L) is less than the rider's weight (kg), it is a 'sinker' and requires at least 25 knots to stay upright. Never recommend this to anyone unless the wind is F6+.
+In light winds (under 18 kts), the board volume (L) must be significantly higher than the rider's weight (kg) to provide float. For a {user_weight}kg rider in 12 kts, a 70L board is a "sinker" and is a catastrophic recommendation. Always suggest Weight + 30L for sub-20 knot winds.
