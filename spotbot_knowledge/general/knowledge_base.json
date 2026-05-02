@@ -38,14 +38,29 @@
       "definition": "How the wind hits the shore. Side-shore is usually best for windsurfing waves; On-shore is safer but choppier."
     },
     {
-    "term": "Spring Tides",
-    "unit": "Full/New Moon",
-    "definition": "Occur twice a month when the moon is full or new. Expect higher highs, lower lows, and much stronger currents."
-},
-{
-    "term": "Neap Tides",
-    "unit": "Quarter Moon",
-    "definition": "Occur during the moon's quarter phases. The difference between high and low tide is at its smallest, resulting in mellow water movement."
-}
+      "term": "Spring Tides",
+      "unit": "Full/New Moon",
+      "definition": "Occur twice a month when the moon is full or new. Expect higher highs, lower lows, and much stronger currents."
+    },
+    {
+      "term": "Neap Tides",
+      "unit": "Quarter Moon",
+      "definition": "Occur during the moon's quarter phases. The difference between high and low tide is at its smallest, resulting in mellow water movement."
+    },
+    {
+      "term": "Wave Steepness",
+      "unit": "Ratio",
+      "definition": "The 'pitch' of the wave. Hollow/Steep waves are punchy and break fast. Rolling/Fat waves are mellow and easier for learning or long rides."
+    },
+    {
+      "term": "Tidal Flow",
+      "unit": "Strength",
+      "definition": "Based on the 'Rule of Twelfths.' Water moves fastest during the middle 2 hours between high and low tide. Plan for stronger currents then."
+    },
+    {
+      "term": "Visibility",
+      "unit": "Kilometers",
+      "definition": "How far you can see. Below 2km is dangerous for windsurfing as you can lose sight of the shore or other riders."
+    }
   ]
 }

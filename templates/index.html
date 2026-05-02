@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SpotBot | Local Legend</title>
+    <title>Windsurf SpotBot | Local Legend</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3/dist/chartjs-plugin-annotation.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { background-color: #f4f7f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         #map { height: 450px; border-radius: 15px; margin-bottom: 20px; border: 3px solid #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .shred-card { border: none; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); background: white; }
-        .wind-icon { font-size: 2.2rem; display: block; margin-bottom: 5px; }
         .legend-box { border-left: 5px solid #ffc107; background-color: #fff9e6; border-radius: 8px; }
         /* Wind Speed Colour Classes — matched to engine.py wind_color values */
         .wind-light { color: #6c757d; }   /* < 13kts: grey, not worth it */
@@ -157,19 +157,14 @@
                             <div class="card-body p-3 d-flex flex-column justify-content-between">
                                 <div>
                                     <div class="text-muted small fw-bold mb-1">WAVES</div>
-                                    <div class="h3 mb-0 text-primary">
-                                        {{ report.live.waves_m }}<small class="h6">m</small>
-                                    </div>
-                                    <div class="small text-muted mt-1">
-                                        {{ report.live.wave_power_desc }} power
-                                    </div>
+                                    <div class="h3 mb-0 text-primary">{{ report.live.waves_m }}<small class="h6">m</small></div>
+                                    <div class="small text-muted mt-1">{{ report.live.wave_power_desc }} power</div>
                                 </div>
                                 <div>
                                     <hr class="my-2 opacity-25">
-                                    <div class="small fw-bold">Period: {{ report.live.wave_period }}s</div>
-                                    <div class="text-muted small">Wave Interval</div>
-                                    <div class="small fw-bold mt-1">{{ report.live.wave_power }} kW/m</div>
-                                    <div class="text-muted small">Wave Power</div>
+                                    <div class="small d-flex justify-content-between"><span>Period:</span> <b>{{ report.live.wave_period }}s</b></div>
+                                    <div class="small d-flex justify-content-between"><span>Steepness:</span> <b>{{ report.live.wave_steepness }}</b></div>
+                                    <div class="small d-flex justify-content-between"><span>Energy:</span> <b>{{ report.live.wave_power }} kW/m</b></div>
                                 </div>
                             </div>
                         </div>
@@ -186,18 +181,9 @@
                                 </div>
                                 <div>
                                     <hr class="my-2 opacity-25">
-                                    <div class="d-flex justify-content-between small">
-                                        <span class="text-muted">Phase:</span>
-                                        <span class="fw-bold">{{ report.live.tide_phase }}</span>
-                                    </div>
-                                    <div class="d-flex justify-content-between small mt-1">
-                                        <span class="text-muted">Flow:</span>
-                                        <span class="fw-bold text-primary">{{ report.live.tidal_flow }}</span>
-                                    </div>
-                                    <div class="d-flex justify-content-between small mt-1">
-                                        <span class="text-muted">Water:</span>
-                                        <span class="fw-bold">{{ report.live.water_temp }}°C</span>
-                                    </div>
+                                    <div class="small d-flex justify-content-between"><span>Phase:</span> <b>{{ report.live.tide_phase }}</b></div>
+                                    <div class="small d-flex justify-content-between"><span>Flow:</span> <b class="text-primary">{{ report.live.tidal_flow }}</b></div>
+                                    <div class="small d-flex justify-content-between"><span>Water:</span> <b>{{ report.live.water_temp }}°C</b></div>
                                 </div>
                             </div>
                         </div>
@@ -208,20 +194,15 @@
                         <div class="card h-100 shadow-sm border-0 bg-light">
                             <div class="card-body p-3 d-flex flex-column justify-content-between">
                                 <div>
-                                    <div class="text-muted small fw-bold mb-1">DAYLIGHT</div>
-                                    <div class="h6 fw-bold mb-0">{{ report.live.sun_status }}</div>
-                                    <div class="small text-muted mt-1">
-                                        🌅 {{ report.metadata.sunrise }} — {{ report.metadata.sunset }}
-                                    </div>
+                                    <div class="text-muted small fw-bold mb-1">ENVIRONMENT</div>
+                                    <div class="h4 mb-0">{{ report.live.air_temp }}°C</div>
+                                    <div class="small text-muted">{{ report.live.sun_status }}</div>
                                 </div>
                                 <div>
                                     <hr class="my-2 opacity-25">
-                                    <div class="small fw-bold">🩱 Wetsuit:</div>
-                                    <div class="small text-muted">{{ report.live.wetsuit_rec }}</div>
-                                    {% if report.live.best_session %}
-                                    <div class="small fw-bold mt-1">⏱ Best Window:</div>
-                                    <div class="small text-muted">From {{ report.live.best_session.start }} (~{{ report.live.best_session.avg_knots }}kts)</div>
-                                    {% endif %}
+                                    <div class="small d-flex justify-content-between"><span>Clouds:</span> <b>{{ report.live.cloud_cover }}%</b></div>
+                                    <div class="small d-flex justify-content-between"><span>Visibility:</span> <b>{{ report.live.visibility }}km</b></div>
+                                    <div class="small d-flex justify-content-between"><span>Sunset:</span> <b>{{ report.metadata.sunset }}</b></div>
                                 </div>
                             </div>
                         </div>

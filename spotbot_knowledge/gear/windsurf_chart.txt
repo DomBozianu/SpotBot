@@ -49,4 +49,4 @@ OFFICIAL WINDSURF SESSION KNOWLEDGE BASE (v2.0)
 - 10: "Epic but Dangerous." Pros only.
 
 GOLDEN RULE: If the board volume (L) is less than the rider's weight (kg), it is a 'sinker' and requires at least 25 knots to stay upright. Never recommend this to anyone unless the wind is F6+.
-In light winds (under 18 kts), the board volume (L) must be significantly higher than the rider's weight (kg) to provide float. For a {user_weight}kg rider in 12 kts, a 70L board is a "sinker" and is a catastrophic recommendation. Always suggest Weight + 30L for sub-20 knot winds.
+In light winds (under 18 kts), the board volume (L) must be significantly higher than the rider's weight (kg) to provide float. A 70L board in 12 kts is a "sinker" and a catastrophic recommendation. Always suggest Weight + 30L for sub-20 knot winds.

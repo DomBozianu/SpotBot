@@ -56,6 +56,15 @@ def calculate_wave_power(height, period):
         
     return power_val, wave_desc
 
+def calculate_steepness(height, period):
+    """Calculates wave steepness. Higher = punchier/hollower."""
+    if period == 0: return "Flat"
+    # Simplified steepness index
+    steepness = height / (period ** 2)
+    if steepness > 0.025: return "Hollow/Steep"
+    if steepness > 0.015: return "Average"
+    return "Rolling/Fat"
+
 def get_beaufort(knots):
     if knots < 1:  return {"f": 0, "name": "Calm", "desc": "Mirror flat"}
     if knots < 4:  return {"f": 1, "name": "Light Air", "desc": "Ripples"}
@@ -178,7 +187,10 @@ def get_wetsuit_rec(water_temp_c):
 def fetch_spot_data(lat, lon):
     weather_params = {
         "latitude": lat, "longitude": lon,
-        "current": ["weather_code", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m"],
+        "current": [
+            "weather_code", "wind_speed_10m", "wind_direction_10m",
+            "wind_gusts_10m", "apparent_temperature", "cloud_cover", "visibility"
+            ],
         "hourly": ["wind_speed_10m", "wind_gusts_10m", "weather_code"],
         "daily": ["sunrise", "sunset"],
         "wind_speed_unit": "kn", "timezone": "auto"
@@ -274,6 +286,10 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
                 "sendiness_score": demo_score,
                 "sendiness_label": demo_label,
                 "best_session": demo_session,
+                "wave_steepness": "Hollow/Steep",
+                "air_temp": 14,
+                "cloud_cover": 20,
+                "visibility": 15.0
             },
             "forecast_12h": demo_forecast,
             "local_knowledge": "Perfect cross-shore conditions. Watch the sandbar at low tide."
@@ -283,8 +299,19 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     weather, marine = fetch_spot_data(spot['lat'], spot['lon'])
     tides = fetch_tide_data(spot['tide_id'])
     
+    #time stuff
+    raw_tz = weather.Timezone()
+    tz_name = raw_tz.decode('utf-8') if isinstance(raw_tz, bytes) else raw_tz
+    tz_name = tz_name or 'Europe/London'
+    now_local = arrow.now(tz_name)
+    current_hour_idx = now_local.hour
+
     # --- 2. Current Wind ---
     current = weather.Current()
+    app_temp = current.Variables(4).Value()
+    clouds = current.Variables(5).Value()
+    vis_meters = current.Variables(6).Value()
+    visibility_km = round(vis_meters / 1000, 1)
     wind_spd = current.Variables(1).Value()
     wind_deg = current.Variables(2).Value()
     gust_spd = current.Variables(3).Value()
@@ -313,21 +340,21 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     m_curr = marine.Current()
     wave_h = m_curr.Variables(0).Value()
     wave_p = m_curr.Variables(1).Value()
-
+    wave_steepness = calculate_steepness(wave_h, wave_p)
     # Water temp comes from the hourly marine array; index by current hour
     m_hourly = marine.Hourly()
     w_temp_arr = m_hourly.Variables(0).ValuesAsNumpy()
+    now_local = arrow.now(tz_name)
+    current_hour_idx = now_local.hour    
     if w_temp_arr.ndim == 0:
         w_temp = float(w_temp_arr)
     else:
-        current_hour_idx = datetime.now().hour
         w_temp = float(w_temp_arr[current_hour_idx])
 
     wave_pwr_val, wave_pwr_desc = calculate_wave_power(wave_h, wave_p)
     
     # --- 4. Hourly Wind Trend & 12h Forecast ---
     hourly = weather.Hourly()
-    current_hour_idx = datetime.now().hour
     all_speeds = hourly.Variables(0).ValuesAsNumpy()
     all_gusts = hourly.Variables(1).ValuesAsNumpy()
     all_codes = hourly.Variables(2).ValuesAsNumpy()
@@ -414,7 +441,7 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
         elif ratio < 0.60: tide_phase = "Neaps"
         else: tide_phase = "Mid-Cycle"
 
-    # --- 5. Sun / Daylight Logic ---
+    # --- 6. Sun / Daylight Logic ---
     now_local = arrow.now(tz_name)
     sunset_obj = arrow.get(sunset, 'HH:mm')
     # Set the date to today so the math works
@@ -466,8 +493,12 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
             "gusts_knots": float(round(gust_spd, 1)),
             "waves_m": float(round(wave_h, 1)),
             "wave_period": float(round(wave_p, 1)),
+            "wave_steepness": wave_steepness,  # NEW
             "wave_power": wave_pwr_val,
             "wave_power_desc": wave_pwr_desc,
+            "air_temp": int(round(app_temp)),  # NEW (Using Feels Like)
+            "cloud_cover": int(clouds),         # NEW
+            "visibility": visibility_km,        # NEW
             "tide_display": tide_display,
             "next_tide_info": next_tide_info,
             "tide_phase": tide_phase,
@@ -489,14 +520,7 @@ async def get_ai_recommendation(report, user_weight, spot_key, user_level):
     """
     try:
         base_path = Path(__file__).parent / "spotbot_knowledge"
-        
-        # Load all knowledge sources
-        gear_kb = (base_path / "gear" / "windsurf_chart.txt").read_text()
-        fundamentals_kb = (base_path / "general" / "windsurfing_fundamentals.txt").read_text()
-        
-        with open(base_path / "general" / "knowledge_base.json", 'r') as f:
-            general_kb = json.load(f)
-        
+
         spot_kb_path = base_path / "spots" / f"{spot_key}.txt"
         spot_kb = spot_kb_path.read_text() if spot_kb_path.exists() else "No local knowledge available."
 
@@ -504,9 +528,6 @@ async def get_ai_recommendation(report, user_weight, spot_key, user_level):
         spot_name = metadata.get('spot_name', 'The Beach')
         live = report.get('live', {})
         forecast = report.get('forecast_12h', [])
-
-        # Skill-based buoyancy: novices need more float, advanced riders go smaller
-        buoyancy_mod = 40 if user_level == "novice" else 20 if user_level == "advanced" else 30
 
         # Current conditions
         wind_now = live.get('wind_knots', 0)
