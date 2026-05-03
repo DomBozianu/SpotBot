@@ -207,15 +207,20 @@ def fetch_spot_data(lat, lon):
     return weather_res, marine_res
 
 def fetch_tide_data(station_id):
-    api_key = os.getenv("ADMIRALTY_KEY")
+    # FIX: Use the same key name as add_spot.py
+    api_key = os.getenv("ADMIRALTY_API_KEY") or os.getenv("ADMIRALTY_KEY")
     if not api_key: return []
-    url = f"https://admiraltyapi.azure-api.net/uktidalapi/api/V1/Stations/{station_id}/TidalEvents"
+    
+    # Request 48 hours (duration=2) to ensure we always have a 'next' tide
+    url = f"https://admiraltyapi.azure-api.net/uktidalapi/api/V1/Stations/{station_id}/TidalEvents?duration=2"
     headers = {"Ocp-Apim-Subscription-Key": api_key}
     try:
-        response = cache_session.get(url, headers=headers, timeout=3)
+        response = cache_session.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             return response.json()
-    except: return []
+    except Exception as e:
+        print(f"Tide API Error: {e}")
+        return []
     return []
 
 async def get_shred_report(spot_key: str, user_weight: str = "75", level="intermediate"):
@@ -333,8 +338,12 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
 
     # Sun times from the daily forecast block
     daily = weather.Daily()
-    sunrise = datetime.fromtimestamp(float(daily.Variables(0).ValuesInt64AsNumpy()[0])).strftime("%H:%M")
-    sunset = datetime.fromtimestamp(float(daily.Variables(1).ValuesInt64AsNumpy()[0])).strftime("%H:%M")
+    sunrise_ts = daily.Variables(0).ValuesInt64AsNumpy()[0]
+    sunset_ts = daily.Variables(1).ValuesInt64AsNumpy()[0]
+    
+    # Arrow handles the UTC-to-Local conversion much more reliably
+    sunrise = arrow.get(int(sunrise_ts)).to(tz_name).format("HH:mm")
+    sunset = arrow.get(int(sunset_ts)).to(tz_name).format("HH:mm")
     # After defining sunrise/sunset strings...
     sunset_obj = arrow.get(sunset, 'HH:mm')
     sunset_today = now_local.replace(hour=sunset_obj.hour, minute=sunset_obj.minute)
@@ -360,10 +369,8 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     m_hourly = marine.Hourly()
     w_temp_arr = m_hourly.Variables(0).ValuesAsNumpy()
     current_hour_idx = now_local.hour    
-    if w_temp_arr.ndim == 0:
-        w_temp = float(w_temp_arr)
-    else:
-        w_temp = float(w_temp_arr[current_hour_idx])
+    safe_idx = min(current_hour_idx, len(w_temp_arr) - 1)
+    w_temp = float(w_temp_arr[safe_idx])
 
     wave_pwr_val, wave_pwr_desc = calculate_wave_power(wave_h, wave_p)
     
@@ -374,56 +381,56 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     all_gusts = hourly.Variables(1).ValuesAsNumpy()
     all_codes = hourly.Variables(2).ValuesAsNumpy()
 
-    # Simple trend: compare now vs 3 hours ahead
-    future_wind = all_speeds[(current_hour_idx + 3) % 24]
+    # Simple trend: Compare 'now' to 3 entries ahead in the array
+    # (No modulo needed because the array is 168 hours long)
+    future_wind = all_speeds[current_hour_idx + 3] 
     if future_wind > wind_spd + 2: wind_trend = "Building"
     elif future_wind < wind_spd - 2: wind_trend = "Dropping"
     else: wind_trend = "Steady"
 
     trend_12h = []
     for i in range(12):
-        idx = (current_hour_idx + i) % 24
+        # Just move forward from the current hour index
+        idx = int(current_hour_idx + i)
         trend_12h.append({
-            "hour": f"{idx:02d}:00",
+            "hour": arrow.now(tz_name).shift(hours=i).format("HH:00"),
             "speed": float(round(all_speeds[idx], 1)),
             "gust": float(round(all_gusts[idx], 1)),
             "code": int(all_codes[idx])
         })
 
     # --- 5. Tides ---
-    # Uses the Admiralty API data. Falls back gracefully if no API key is set.
-    # THE RULE OF TWELFTHS: tidal flow is strongest 2-4 hours from high/low.
     tide_list = []
-    next_tide_info = "Check tomorrow"
+    next_tide_info = "Data Unavailable"
     tide_display = "Stable"
     tidal_flow = "Low"
     next_tide_obj = None
     tide_phase = "Unknown"
 
-    if tides:
-        # Benchmark for the whole week
+    if tides and len(tides) > 0:
+        # Benchmark for the whole week/request
         all_heights = [event['Height'] for event in tides]
         weekly_max_range = max(all_heights) - min(all_heights)
 
         for event in tides:
-            # Create the time object for calculation
             event_time = arrow.get(event['DateTime']).to(tz_name)
-            
             t_data = {
                 "date": event_time.format('ddd, MMM DD'),
                 "time": event_time.format('HH:mm'),
                 "type": "High Tide" if "High" in event['EventType'] else "Low Tide",
                 "height": round(event['Height'], 1),
             }
+            tide_list.append(t_data)
 
-            # Strict Future Check: Use event_time (the Arrow object) for comparison
+            # Find the FIRST tide that is in the future
             if not next_tide_obj and event_time > now_local:
                 next_tide_obj = t_data
                 diff = event_time - now_local
                 
-                # THE RULE OF TWELFTHS (Tidal Flow)
-                # Max flow is usually 2-4 hours away from high/low tide
-                hours_until = diff.seconds / 3600
+                # Use total_seconds to avoid the "24-hour rollover" bug
+                hours_until = diff.total_seconds() / 3600
+                
+                # Rule of Twelfths: Max flow is 2-4 hours from high/low
                 if 2.0 <= hours_until <= 4.0:
                     tidal_flow = "Strong"
                 elif hours_until < 1.0 or hours_until > 5.0:
@@ -431,7 +438,7 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
                 else:
                     tidal_flow = "Moderate"
 
-                # Absolute time + countdown
+                # Update the display info
                 time_str = t_data['time']
                 if "High" in t_data['type']:
                     tide_display = "📈 Rising"
@@ -439,17 +446,16 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
                 else:
                     tide_display = "📉 Falling"
                     next_tide_info = f"Low @ {time_str} ({int(hours_until)}h remaining)"
-            
-            tide_list.append(t_data)
 
-        # Scalable Phase Logic
-        today_heights = [t['height'] for t in tide_list[:4]] # First 24h
-        today_range = max(today_heights) - min(today_heights)
-        ratio = today_range / weekly_max_range if weekly_max_range > 0 else 0.5
-        
-        if ratio > 0.85: tide_phase = "Springs"
-        elif ratio < 0.60: tide_phase = "Neaps"
-        else: tide_phase = "Mid-Cycle"
+        # Scalable Phase Logic (Springs/Neaps)
+        if len(tide_list) >= 4:
+            today_heights = [t['height'] for t in tide_list[:4]]
+            today_range = max(today_heights) - min(today_heights)
+            ratio = today_range / weekly_max_range if weekly_max_range > 0 else 0.5
+            
+            if ratio > 0.85: tide_phase = "Springs"
+            elif ratio < 0.60: tide_phase = "Neaps"
+            else: tide_phase = "Mid-Cycle"
 
     # --- 6. Sendiness Score, Best Session Window, Wetsuit ---
     sendiness_score, sendiness_label = get_sendiness_score(wind_spd, rel_wind)
@@ -517,6 +523,10 @@ async def get_ai_recommendation(report, user_weight, spot_key, user_level):
         spot_kb_path = base_path / "spots" / f"{spot_key}.txt"
         spot_kb = spot_kb_path.read_text() if spot_kb_path.exists() else "No local knowledge available."
 
+        # 2. Load the Master Gear KB (The file you just showed me)
+        gear_kb_path = base_path / "general" / "gear_knowledge.txt" # Adjust path as needed
+        gear_kb = gear_kb_path.read_text() if gear_kb_path.exists() else "Use standard physics."
+
         metadata = report.get('metadata', {})
         spot_name = metadata.get('spot_name', 'The Beach')
         live = report.get('live', {})
@@ -540,6 +550,9 @@ async def get_ai_recommendation(report, user_weight, spot_key, user_level):
         
         # Build a much cleaner, more focused prompt
         prompt = f"""You are the Local Legend - an expert windsurfer giving practical advice to a {user_level} level rider ({user_weight}kg).
+### MASTER GEAR RULES & PHYSICS:
+{gear_kb}
+
 
 CURRENT CONDITIONS:
 Spot: {spot_name}
@@ -549,17 +562,6 @@ Waves: {live.get('waves_m')}m, {live.get('wave_power_desc')} power
 Water: {live.get('water_temp')}°C
 Forecast: {forecast_summary}
 
-WINDSURFING PHYSICS RULES:
-- Below 12kts: Too light for practical windsurfing. Recommend SUP or foil only.
-- 12-15kts: Marginal conditions. Need huge gear (7-9m sails, {user_weight_kg + 50}L+ boards).
-- 15kts+: Proper windsurfing. Use sail matrix and adjust for discipline.
-
-SAIL MATRIX FOR {user_weight}KG RIDER:
-- 10-15kts: 7.0-7.5m sail
-- 15-20kts: 6.0-6.5m sail  
-- 20-25kts: 5.0-5.5m sail
-- 25-30kts: 4.2-4.7m sail
-- 30kts+: 3.7-4.2m sail
 
 BOARD VOLUMES FOR {user_weight}KG RIDER:
 - Light wind (12-15kts): {user_weight_kg + 50}L (e.g. {user_weight_kg + 50}L board)
@@ -589,11 +591,13 @@ SESSION: Hit the water at 14:00 for best conditions
 THE VIBE: Epic wave day! Cross-shore wind and clean power - watch the sandbar at low tide."
 
 CRITICAL RULES:
+- Do NOT hallucinate gear. Use the tables provided. If {user_weight}kg is between rows, lean toward the heavier row for safety
 - Give ACTUAL board volumes (e.g. "90L board" not formulas)
 - If you say "too light" or SENDINESS 1-2, do NOT recommend windsurfing gear
 - Never show technical formatting or backend calculations
 - Keep it conversational and practical
 - Conservative recommendations - better to say "too light" than recommend marginal gear
+- CRITICAL: If the wind is below 12kts, strictly follow the 'Too light' rule and do not suggest a sail size.
 """
 
         response = await client.chat.completions.create(

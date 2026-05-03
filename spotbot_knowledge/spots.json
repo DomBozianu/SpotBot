@@ -17,7 +17,7 @@
     },
     "kimmeridge_bay": {
         "name": "Kimmeridge Bay",
-        "lat": 50.60,
+        "lat": 50.6,
         "lon": -2.13,
         "tide_id": "0035",
         "knowledge_file": "kimmeridge_bay.txt",
@@ -38,5 +38,53 @@
         "tide_id": "0451",
         "knowledge_file": "demo_spot.txt",
         "shoreline_bearing": 180
+    },
+    "rhosneigr": {
+        "name": "Rhosneigr (Broad Beach)",
+        "lat": 53.226,
+        "lon": -4.524,
+        "tide_id": "0451",
+        "knowledge_file": "rhosneigr.txt",
+        "shoreline_bearing": 225
+    },
+    "brandon_bay": {
+        "name": "Brandon Bay",
+        "lat": 52.2736371,
+        "lon": -10.1005283,
+        "tide_id": "0615",
+        "knowledge_file": "brandon_bay.txt",
+        "shoreline_bearing": 330
+    },
+    "hayling_island": {
+        "name": "Hayling Island",
+        "lat": 50.805649,
+        "lon": -0.9800545,
+        "tide_id": "0065",
+        "knowledge_file": "hayling_island.txt",
+        "shoreline_bearing": 180
+    },
+    "west_wittering": {
+        "name": "West Wittering",
+        "lat": 50.7833912,
+        "lon": -0.8919931,
+        "tide_id": "0068",
+        "knowledge_file": "west_wittering.txt",
+        "shoreline_bearing": 180
+    },
+    "west_mersea": {
+        "name": "West Mersea",
+        "lat": 51.7769754,
+        "lon": 0.917361,
+        "tide_id": "0156",
+        "knowledge_file": "west_mersea.txt",
+        "shoreline_bearing": 180
+    },
+    "brighton": {
+        "name": "Brighton",
+        "lat": 50.8214626,
+        "lon": -0.1400561,
+        "tide_id": "0072",
+        "knowledge_file": "brighton.txt",
+        "shoreline_bearing": 186
     }
 }
