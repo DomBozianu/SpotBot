@@ -72,10 +72,10 @@
         "shoreline_bearing": 180
     },
     "west_mersea": {
-        "name": "West Mersea",
-        "lat": 51.7769754,
-        "lon": 0.917361,
-        "tide_id": "0156",
+        "name": "west mersea",
+        "lat": 51.7739482,
+        "lon": 0.9189482,
+        "tide_id": "0000",
         "knowledge_file": "west_mersea.txt",
         "shoreline_bearing": 180
     },
@@ -86,5 +86,13 @@
         "tide_id": "0072",
         "knowledge_file": "brighton.txt",
         "shoreline_bearing": 186
+    },
+    "gott_bay_tiree": {
+        "name": "Gott Bay, tiree",
+        "lat": 56.516791,
+        "lon": -6.7855873,
+        "tide_id": "4669",
+        "knowledge_file": "gott_bay_tiree.txt",
+        "shoreline_bearing": 135
     }
 }
