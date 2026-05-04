@@ -35,6 +35,66 @@ def load_spots():
 
 SPOTS = load_spots()
 
+async def fetch_all_data(lat, lon, tide_id):
+    """Fetch weather, marine, and tides in parallel to save time."""
+    import asyncio
+    
+    # Create the tasks but don't 'await' them yet
+    weather_task = asyncio.to_thread(fetch_spot_data, lat, lon)
+    tide_task = asyncio.to_thread(fetch_tide_data, tide_id)
+    
+    # Run them simultaneously
+    (weather_res, marine_res), tides = await asyncio.gather(weather_task, tide_task)
+    return weather_res, marine_res, tides
+
+def calculate_gear(weight_kg, wind_speed_kts, skill_level="intermediate"):
+    """
+    Calculates recommended windsurf gear based on physics and skill level.
+    """
+    # 1. Base Sail Calculation (Baseline: 75kg rider)
+    # Mapping wind speed ranges to baseline sail sizes
+    if wind_speed_kts < 12:
+        base_sail = 8.0
+    elif 12 <= wind_speed_kts < 16:
+        base_sail = 7.0
+    elif 16 <= wind_speed_kts < 20:
+        base_sail = 6.0
+    elif 20 <= wind_speed_kts < 25:
+        base_sail = 5.0
+    elif 25 <= wind_speed_kts < 30:
+        base_sail = 4.2
+    else:
+        base_sail = 3.7
+
+    # Adjust for rider weight (+/- 0.5m per 10kg difference from 75kg)
+    weight_diff = (weight_kg - 75) / 10
+    recommended_sail = round(base_sail + (weight_diff * 0.5), 1)
+
+    # 2. Board Volume Calculation
+    # Static weights: Board (~7kg) + Rig (~10kg) + Wetsuit/Harness (~3kg)
+    static_load = 20 
+    displacement_volume = weight_kg + static_load
+
+    # Skill-based reserve buoyancy
+    reserve_map = {
+        "beginner": 100,      # High stability
+        "intermediate": 40,   # Comfortable uphauling
+        "advanced": 15        # Minimum to keep rig afloat
+    }
+    
+    reserve = reserve_map.get(skill_level, 40)
+    recommended_volume = int(displacement_volume + reserve)
+
+    # 3. Sinker Detection Logic
+    is_sinker = recommended_volume <= (weight_kg + static_load)
+    
+    return {
+        "sail_size_m2": recommended_sail,
+        "board_volume_l": recommended_volume,
+        "is_sinker": is_sinker,
+        "logic_used": f"Base {base_sail}m sail adjusted for {weight_kg}kg; {reserve}L reserve for {skill_level}."
+    }
+
 def calculate_wave_power(height, period):
     """
     Calculates wave power in kW/m and returns both the value and a description.
@@ -223,111 +283,225 @@ def fetch_tide_data(station_id):
         return []
     return []
 
+def process_tides(tides, tz_name, now_local):
+    """Handles the Rule of Twelfths and Springs/Neaps logic."""
+    tide_list = []
+    next_tide_obj = None
+    tidal_flow = "Low"
+    tide_display = "Stable"
+    next_tide_info = "Data Unavailable"
+    
+    if not tides:
+        return tide_list, next_tide_info, tide_display, tidal_flow, "Unknown"
+
+    all_heights = [event['Height'] for event in tides]
+    weekly_max_range = max(all_heights) - min(all_heights)
+
+    for event in tides:
+        event_time = arrow.get(event['DateTime']).to(tz_name)
+        t_data = {
+            "date": event_time.format('ddd, MMM DD'),
+            "time": event_time.format('HH:mm'),
+            "type": "High Tide" if "High" in event['EventType'] else "Low Tide",
+            "height": round(event['Height'], 1),
+        }
+        tide_list.append(t_data)
+
+        if not next_tide_obj and event_time > now_local:
+            next_tide_obj = t_data
+            diff = event_time - now_local
+            hours_until = diff.total_seconds() / 3600
+            
+            # Rule of Twelfths
+            if 2.0 <= hours_until <= 4.0: tidal_flow = "Strong"
+            elif hours_until < 1.0 or hours_until > 5.0: tidal_flow = "Slack (Weak)"
+            else: tidal_flow = "Moderate"
+
+            if "High" in t_data['type']:
+                tide_display = "📈 Rising"
+                next_tide_info = f"High @ {t_data['time']} ({int(hours_until)}h remaining)"
+            else:
+                tide_display = "📉 Falling"
+                next_tide_info = f"Low @ {t_data['time']} ({int(hours_until)}h remaining)"
+
+    # Springs/Neaps logic
+    tide_phase = "Mid-Cycle"
+    if len(tide_list) >= 4:
+        today_range = max(all_heights[:4]) - min(all_heights[:4])
+        ratio = today_range / weekly_max_range if weekly_max_range > 0 else 0.5
+        if ratio > 0.85: tide_phase = "Springs"
+        elif ratio < 0.60: tide_phase = "Neaps"
+
+    return tide_list, next_tide_info, tide_display, tidal_flow, tide_phase
+
+def process_forecast(hourly, current_hour_idx, tz_name):
+    """Generates the 12-hour trend list."""
+    all_speeds = hourly.Variables(0).ValuesAsNumpy()
+    all_gusts = hourly.Variables(1).ValuesAsNumpy()
+    all_codes = hourly.Variables(2).ValuesAsNumpy()
+    
+    trend_12h = []
+    for i in range(12):
+        idx = int(current_hour_idx + i)
+        trend_12h.append({
+            "hour": arrow.now(tz_name).shift(hours=i).format("HH:00"),
+            "speed": float(round(all_speeds[idx], 1)),
+            "gust": float(round(all_gusts[idx], 1)),
+            "code": int(all_codes[idx])
+        })
+    return trend_12h
+
+def process_marine_data(marine, current_hour_idx):
+    """Calculates all wave-related physics and water temp."""
+    m_curr = marine.Current()
+    wave_h = m_curr.Variables(0).Value()
+    wave_p = m_curr.Variables(1).Value()
+    
+    # Existing physics functions
+    wave_steepness = calculate_steepness(wave_h, wave_p)
+    wave_pwr_val, wave_pwr_desc = calculate_wave_power(wave_h, wave_p)
+    
+    # Water temp from hourly array
+    m_hourly = marine.Hourly()
+    w_temp_arr = m_hourly.Variables(0).ValuesAsNumpy()
+    w_temp = float(w_temp_arr[min(current_hour_idx, len(w_temp_arr) - 1)])
+    
+    return {
+        "height": float(round(wave_h, 1)),
+        "period": float(round(wave_p, 1)),
+        "steepness": wave_steepness,
+        "power_val": wave_pwr_val,
+        "power_desc": wave_pwr_desc,
+        "temp": int(round(w_temp))
+    }
+
+def get_demo_report():
+    """Returns the hardcoded 'Nuking' report for demos."""
+    # Move your existing 'demo_epic' dictionary here
+    demo_wind = 26.5
+    demo_relative = "💎 Cross-shore"
+    demo_score, demo_label = get_sendiness_score(demo_wind, demo_relative)
+    demo_session = {"start": "14:00", "avg_knots": 24.5}
+    demo_wetsuit = get_wetsuit_rec(12)
+    
+    # Mock 12h forecast for demo charts - more realistic wind pattern
+    demo_forecast = []
+    # Realistic afternoon wind pattern: builds, peaks, then drops
+    base_speeds = [24, 26, 28, 27, 25, 23, 21, 19, 17, 16, 15, 14]
+    for i, speed in enumerate(base_speeds):
+        demo_forecast.append({
+            "hour": f"{(14 + i) % 24:02d}:00",
+            "speed": float(speed + (i % 3 - 1) * 0.5),  # Add slight variation
+            "gust": float(speed + 5 + (i % 2)),  # Variable gust strength
+            "code": 1 if i < 8 else 2  # Clear then partly cloudy
+        })
+    
+    return {
+        "metadata": {
+            "spot_name": "🌟 DEMO: Epic Peak",
+            "status": "Nuking!",
+            "date": "Friday Demo",
+            "last_updated": "Live",
+            "sunrise": "06:00",
+            "sunset": "20:30",
+            "tide_list": [
+                {"date": "Fri, May 02", "time": "16:30", "type": "High Tide", "height": 4.2},
+                {"date": "Fri, May 02", "time": "22:45", "type": "Low Tide", "height": 0.8},
+                {"date": "Sat, May 03", "time": "04:15", "type": "High Tide", "height": 4.1},
+                {"date": "Sat, May 03", "time": "10:30", "type": "Low Tide", "height": 0.9},
+                {"date": "Sat, May 03", "time": "16:45", "type": "High Tide", "height": 4.0},
+                {"date": "Sat, May 03", "time": "23:00", "type": "Low Tide", "height": 1.0}
+            ]
+        },
+        "live": {
+            "wind_knots": demo_wind,
+            "wind_color": "sweet",
+            "beaufort_f": 6,
+            "beaufort_name": "Strong Breeze",
+            "beaufort_desc": "Large branches in motion; whistling in wires.",
+            "wind_dir_name": "S-West",
+            "wind_dir": 225,
+            "wind_arrow": "↗️",
+            "wind_relative": demo_relative,
+            "wind_trend": "Building",
+            "gusts_knots": 34.0,
+            "waves_m": 2.5,
+            "wave_period": 11.0,
+            "wave_power": 34.4,
+            "wave_power_desc": "Clean",
+            "tide_display": "📈 Rising",
+            "next_tide_info": "High @ 16:30 (2h remaining)",
+            "tide_phase": "Springs",
+            "tidal_flow": "Strong",
+            "sun_status": "✨ Golden Hour!",
+            "water_temp": 12,
+            "wetsuit_rec": demo_wetsuit,
+            "sendiness_score": demo_score,
+            "sendiness_label": demo_label,
+            "best_session": demo_session,
+            "wave_steepness": "Hollow/Steep",
+            "air_temp": 14,
+            "cloud_cover": 20,
+            "visibility": 15.0,
+            "recommended_gear": {
+                "sail_size_m2": 4.2, 
+                "board_volume_l": 84, 
+                "is_sinker": True
+            },
+        },
+        "forecast_12h": demo_forecast,
+        "local_knowledge": "Perfect cross-shore conditions. Watch the sandbar at low tide."
+    }
+
 async def get_shred_report(spot_key: str, user_weight: str = "75", level="intermediate"):
     spot = SPOTS.get(spot_key)
     if not spot: return None
-    # --- DEMO / PRESENTATION MODE ---
-    # Hardcoded "nuking" conditions so demos always look great regardless of real weather.
-    # All fields must match the live report structure exactly.
-    if spot_key == "demo_epic":
-        demo_wind = 26.5
-        demo_relative = "💎 Cross-shore"
-        demo_score, demo_label = get_sendiness_score(demo_wind, demo_relative)
-        demo_session = {"start": "14:00", "avg_knots": 24.5}
-        demo_wetsuit = get_wetsuit_rec(12)
-        
-        # Mock 12h forecast for demo charts - more realistic wind pattern
-        demo_forecast = []
-        # Realistic afternoon wind pattern: builds, peaks, then drops
-        base_speeds = [24, 26, 28, 27, 25, 23, 21, 19, 17, 16, 15, 14]
-        for i, speed in enumerate(base_speeds):
-            demo_forecast.append({
-                "hour": f"{(14 + i) % 24:02d}:00",
-                "speed": float(speed + (i % 3 - 1) * 0.5),  # Add slight variation
-                "gust": float(speed + 5 + (i % 2)),  # Variable gust strength
-                "code": 1 if i < 8 else 2  # Clear then partly cloudy
-            })
-        
-        return {
-            "metadata": {
-                "spot_name": "🌟 DEMO: Epic Peak",
-                "status": "Nuking!",
-                "date": "Friday Demo",
-                "last_updated": "Live",
-                "sunrise": "06:00",
-                "sunset": "20:30",
-                "tide_list": [
-                    {"date": "Fri, May 02", "time": "16:30", "type": "High Tide", "height": 4.2},
-                    {"date": "Fri, May 02", "time": "22:45", "type": "Low Tide", "height": 0.8},
-                    {"date": "Sat, May 03", "time": "04:15", "type": "High Tide", "height": 4.1},
-                    {"date": "Sat, May 03", "time": "10:30", "type": "Low Tide", "height": 0.9},
-                    {"date": "Sat, May 03", "time": "16:45", "type": "High Tide", "height": 4.0},
-                    {"date": "Sat, May 03", "time": "23:00", "type": "Low Tide", "height": 1.0}
-                ]
-            },
-            "live": {
-                "wind_knots": demo_wind,
-                "wind_color": "sweet",
-                "beaufort_f": 6,
-                "beaufort_name": "Strong Breeze",
-                "beaufort_desc": "Large branches in motion; whistling in wires.",
-                "wind_dir_name": "S-West",
-                "wind_dir": 225,
-                "wind_arrow": "↗️",
-                "wind_relative": demo_relative,
-                "wind_trend": "Building",
-                "gusts_knots": 34.0,
-                "waves_m": 2.5,
-                "wave_period": 11.0,
-                "wave_power": 34.4,
-                "wave_power_desc": "Clean",
-                "tide_display": "📈 Rising",
-                "next_tide_info": "High @ 16:30 (2h remaining)",
-                "tide_phase": "Springs",
-                "tidal_flow": "Strong",
-                "sun_status": "✨ Golden Hour!",
-                "water_temp": 12,
-                "wetsuit_rec": demo_wetsuit,
-                "sendiness_score": demo_score,
-                "sendiness_label": demo_label,
-                "best_session": demo_session,
-                "wave_steepness": "Hollow/Steep",
-                "air_temp": 14,
-                "cloud_cover": 20,
-                "visibility": 15.0
-            },
-            "forecast_12h": demo_forecast,
-            "local_knowledge": "Perfect cross-shore conditions. Watch the sandbar at low tide."
-        }
 
-    # --- 1. Fetch weather, marine, and tide data ---
-    weather, marine = fetch_spot_data(spot['lat'], spot['lon'])
-    tides = fetch_tide_data(spot['tide_id'])
-    
-    #time stuff
+    if spot_key == "demo_epic":
+        return get_demo_report()
+
+    # 2. Parallel Fetching (The Optimization)
+    weather, marine, tides = await fetch_all_data(spot['lat'], spot['lon'], spot['tide_id'])
+
+    # 2. Time Setup
     raw_tz = weather.Timezone()
-    tz_name = raw_tz.decode('utf-8') if isinstance(raw_tz, bytes) else raw_tz
-    tz_name = tz_name or 'Europe/London'
+    tz_name = raw_tz.decode('utf-8') if isinstance(raw_tz, bytes) else raw_tz or 'Europe/London'
     now_local = arrow.now(tz_name)
     current_hour_idx = now_local.hour
-
-    last_updated = now_local.format('HH:mm')
+    
+    # Define these for the metadata return
     today_date = now_local.format('ddd, MMM DD')
+    last_updated = now_local.format('HH:mm')
 
-    # --- 2. Current Wind ---
+    # 3. Extract Current Weather
     current = weather.Current()
-    app_temp = current.Variables(4).Value()
-    clouds = current.Variables(5).Value()
-    vis_meters = current.Variables(6).Value()
-    visibility_km = round(vis_meters / 1000, 1)
     wind_spd = current.Variables(1).Value()
     wind_deg = current.Variables(2).Value()
     gust_spd = current.Variables(3).Value()
+    app_temp = current.Variables(4).Value()
+    clouds = current.Variables(5).Value()
+    visibility_km = round(current.Variables(6).Value() / 1000, 1)
     
-    #last_updated = arrow.now('Europe/London').format('HH:mm')
-    #today_date = arrow.now('Europe/London').format('ddd, MMM DD')
-    
+    # 3. Process Sub-Modules (The Optimizations)
+    # This keeps the main function under 50 lines
+    tide_list, next_info, t_disp, t_flow, t_phase = process_tides(tides, tz_name, now_local)
+    marine_data = process_marine_data(marine, current_hour_idx)
+    trend_12h = process_forecast(weather.Hourly(), current_hour_idx, tz_name)
+
+    # 5. Physics & Logic
+    weight_int = int(user_weight) if user_weight.isdigit() else 75
+    gear = calculate_gear(weight_int, wind_spd, level)
+    rel_wind = get_relative_wind(wind_deg, spot.get('shoreline_bearing'))
+    sendiness_score, sendiness_label = get_sendiness_score(wind_spd, rel_wind)
     beaufort = get_beaufort(wind_spd)
+    best_session = get_best_session_window(trend_12h)
+
+    # Wind trend (Simplified comparison)
+    all_speeds = weather.Hourly().Variables(0).ValuesAsNumpy()
+    future_wind = all_speeds[min(current_hour_idx + 3, len(all_speeds)-1)] 
+    if future_wind > wind_spd + 2: wind_trend = "Building"
+    elif future_wind < wind_spd - 2: wind_trend = "Dropping"
+    else: wind_trend = "Steady"
     
     # Wind colour drives the UI badge colour
     if wind_spd < 13: wind_color = "light"
@@ -336,131 +510,20 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     elif wind_spd < 36: wind_color = "heavy"
     else: wind_color = "nuke"
 
-    # Sun times from the daily forecast block
+    # 6. Sun Logic
     daily = weather.Daily()
-    sunrise_ts = daily.Variables(0).ValuesInt64AsNumpy()[0]
-    sunset_ts = daily.Variables(1).ValuesInt64AsNumpy()[0]
+    sunrise = arrow.get(int(daily.Variables(0).ValuesInt64AsNumpy()[0])).to(tz_name).format("HH:mm")
+    sunset = arrow.get(int(daily.Variables(1).ValuesInt64AsNumpy()[0])).to(tz_name).format("HH:mm")
     
-    # Arrow handles the UTC-to-Local conversion much more reliably
-    sunrise = arrow.get(int(sunrise_ts)).to(tz_name).format("HH:mm")
-    sunset = arrow.get(int(sunset_ts)).to(tz_name).format("HH:mm")
-    # After defining sunrise/sunset strings...
-    sunset_obj = arrow.get(sunset, 'HH:mm')
-    sunset_today = now_local.replace(hour=sunset_obj.hour, minute=sunset_obj.minute)
-
-    if now_local > sunset_today:
+    # Check if Golden Hour (within 1 hour of sunset)
+    sunset_time = arrow.get(sunset, "HH:mm").replace(year=now_local.year, month=now_local.month, day=now_local.day)
+    if now_local > sunset_time:
         sun_status = "Sun has set"
     else:
-        diff_sun = sunset_today - now_local
-        if diff_sun.seconds / 3600 < 1:
-            sun_status = "✨ Golden Hour!"
-        else:
-            sun_status = f"{diff_sun.seconds // 3600}h {(diff_sun.seconds % 3600) // 60}m left"
-
+        diff = (sunset_time - now_local).total_seconds() / 3600
+        sun_status = "✨ Golden Hour!" if diff < 1 else f"{int(diff)}h left" 
     rel_wind = get_relative_wind(wind_deg, spot.get('shoreline_bearing'))
     dir_info = get_compass_info(wind_deg)
-    
-    # --- 3. Marine (Waves & Water Temp) ---
-    m_curr = marine.Current()
-    wave_h = m_curr.Variables(0).Value()
-    wave_p = m_curr.Variables(1).Value()
-    wave_steepness = calculate_steepness(wave_h, wave_p)
-    # Water temp comes from the hourly marine array; index by current hour
-    m_hourly = marine.Hourly()
-    w_temp_arr = m_hourly.Variables(0).ValuesAsNumpy()
-    current_hour_idx = now_local.hour    
-    safe_idx = min(current_hour_idx, len(w_temp_arr) - 1)
-    w_temp = float(w_temp_arr[safe_idx])
-
-    wave_pwr_val, wave_pwr_desc = calculate_wave_power(wave_h, wave_p)
-    
-    
-    # --- 4. Hourly Wind Trend & 12h Forecast ---
-    hourly = weather.Hourly()
-    all_speeds = hourly.Variables(0).ValuesAsNumpy()
-    all_gusts = hourly.Variables(1).ValuesAsNumpy()
-    all_codes = hourly.Variables(2).ValuesAsNumpy()
-
-    # Simple trend: Compare 'now' to 3 entries ahead in the array
-    # (No modulo needed because the array is 168 hours long)
-    future_wind = all_speeds[current_hour_idx + 3] 
-    if future_wind > wind_spd + 2: wind_trend = "Building"
-    elif future_wind < wind_spd - 2: wind_trend = "Dropping"
-    else: wind_trend = "Steady"
-
-    trend_12h = []
-    for i in range(12):
-        # Just move forward from the current hour index
-        idx = int(current_hour_idx + i)
-        trend_12h.append({
-            "hour": arrow.now(tz_name).shift(hours=i).format("HH:00"),
-            "speed": float(round(all_speeds[idx], 1)),
-            "gust": float(round(all_gusts[idx], 1)),
-            "code": int(all_codes[idx])
-        })
-
-    # --- 5. Tides ---
-    tide_list = []
-    next_tide_info = "Data Unavailable"
-    tide_display = "Stable"
-    tidal_flow = "Low"
-    next_tide_obj = None
-    tide_phase = "Unknown"
-
-    if tides and len(tides) > 0:
-        # Benchmark for the whole week/request
-        all_heights = [event['Height'] for event in tides]
-        weekly_max_range = max(all_heights) - min(all_heights)
-
-        for event in tides:
-            event_time = arrow.get(event['DateTime']).to(tz_name)
-            t_data = {
-                "date": event_time.format('ddd, MMM DD'),
-                "time": event_time.format('HH:mm'),
-                "type": "High Tide" if "High" in event['EventType'] else "Low Tide",
-                "height": round(event['Height'], 1),
-            }
-            tide_list.append(t_data)
-
-            # Find the FIRST tide that is in the future
-            if not next_tide_obj and event_time > now_local:
-                next_tide_obj = t_data
-                diff = event_time - now_local
-                
-                # Use total_seconds to avoid the "24-hour rollover" bug
-                hours_until = diff.total_seconds() / 3600
-                
-                # Rule of Twelfths: Max flow is 2-4 hours from high/low
-                if 2.0 <= hours_until <= 4.0:
-                    tidal_flow = "Strong"
-                elif hours_until < 1.0 or hours_until > 5.0:
-                    tidal_flow = "Slack (Weak)"
-                else:
-                    tidal_flow = "Moderate"
-
-                # Update the display info
-                time_str = t_data['time']
-                if "High" in t_data['type']:
-                    tide_display = "📈 Rising"
-                    next_tide_info = f"High @ {time_str} ({int(hours_until)}h remaining)"
-                else:
-                    tide_display = "📉 Falling"
-                    next_tide_info = f"Low @ {time_str} ({int(hours_until)}h remaining)"
-
-        # Scalable Phase Logic (Springs/Neaps)
-        if len(tide_list) >= 4:
-            today_heights = [t['height'] for t in tide_list[:4]]
-            today_range = max(today_heights) - min(today_heights)
-            ratio = today_range / weekly_max_range if weekly_max_range > 0 else 0.5
-            
-            if ratio > 0.85: tide_phase = "Springs"
-            elif ratio < 0.60: tide_phase = "Neaps"
-            else: tide_phase = "Mid-Cycle"
-
-    # --- 6. Sendiness Score, Best Session Window, Wetsuit ---
-    sendiness_score, sendiness_label = get_sendiness_score(wind_spd, rel_wind)
-    best_session = get_best_session_window(trend_12h)
-    wetsuit_rec = get_wetsuit_rec(w_temp)
 
     # --- 7. Local Knowledge ---
     wisdom = "No local knowledge found."
@@ -481,6 +544,7 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
         "live": {
             "wind_knots": float(round(wind_spd, 1)),
             "wind_color": wind_color,
+            "recommended_gear": gear,  # <--- NEW: Passing the Python-calculated gear
             "beaufort_f": beaufort['f'],
             "beaufort_name": beaufort['name'],
             "beaufort_desc": beaufort['desc'],
@@ -490,21 +554,21 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
             "wind_relative": rel_wind,
             "wind_trend": wind_trend,
             "gusts_knots": float(round(gust_spd, 1)),
-            "waves_m": float(round(wave_h, 1)),
-            "wave_period": float(round(wave_p, 1)),
-            "wave_steepness": wave_steepness,  # NEW
-            "wave_power": wave_pwr_val,
-            "wave_power_desc": wave_pwr_desc,
-            "air_temp": int(round(app_temp)),  # NEW (Using Feels Like)
-            "cloud_cover": int(clouds),         # NEW
-            "visibility": visibility_km,        # NEW
-            "tide_display": tide_display,
-            "next_tide_info": next_tide_info,
-            "tide_phase": tide_phase,
-            "tidal_flow": tidal_flow,
+            "waves_m": marine_data['height'],
+            "wave_period": marine_data['period'],
+            "wave_steepness": marine_data['steepness'],
+            "wave_power": marine_data['power_val'],
+            "wave_power_desc": marine_data['power_desc'],
+            "air_temp": int(round(app_temp)),
+            "cloud_cover": int(clouds),
+            "visibility": visibility_km,
+            "tide_display": t_disp,
+            "next_tide_info": next_info,
+            "tide_phase": t_phase,
+            "tidal_flow": t_flow,
             "sun_status": sun_status,
-            "water_temp": int(round(w_temp)),
-            "wetsuit_rec": wetsuit_rec,
+            "water_temp": marine_data['temp'],
+            "wetsuit_rec": get_wetsuit_rec(marine_data['temp']),
             "sendiness_score": sendiness_score,
             "sendiness_label": sendiness_label,
             "best_session": best_session,
@@ -513,99 +577,60 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
         "local_knowledge": wisdom
     }
 async def get_ai_recommendation(report, user_weight, spot_key, user_level):
-    """
-    Calls the LLM to generate the Local Legend's advice.
-    Loads comprehensive windsurfing knowledge to ensure physically accurate recommendations.
-    """
     try:
         base_path = Path(__file__).parent / "spotbot_knowledge"
+        fundamentals = (base_path / "general" / "windsurfing_fundamentals.txt").read_text(encoding='utf-8')[:8000] if (base_path / "windsurfing_fundamentals.txt").exists() else ""
+        spot_kb = (base_path / "spots" / f"{spot_key}.txt").read_text(encoding='utf-8')[:4000] if (base_path / "spots" / f"{spot_key}.txt").exists() else ""
 
-        spot_kb_path = base_path / "spots" / f"{spot_key}.txt"
-        spot_kb = spot_kb_path.read_text() if spot_kb_path.exists() else "No local knowledge available."
-
-        # 2. Load the Master Gear KB (The file you just showed me)
-        gear_kb_path = base_path / "general" / "gear_knowledge.txt" # Adjust path as needed
-        gear_kb = gear_kb_path.read_text() if gear_kb_path.exists() else "Use standard physics."
-
-        metadata = report.get('metadata', {})
-        spot_name = metadata.get('spot_name', 'The Beach')
         live = report.get('live', {})
-        forecast = report.get('forecast_12h', [])
-
-        # Current conditions
-        wind_now = live.get('wind_knots', 0)
-        wetsuit = live.get('wetsuit_rec', 'Unknown')
-        best_session = live.get('best_session')
+        meta = report.get('metadata', {})
+        gear = live.get('recommended_gear', {})
         
-        # Forecast summary for AI context
-        if forecast:
-            forecast_summary = f"Next 12h: {forecast[0]['speed']}-{max(h['speed'] for h in forecast[:6])}kts"
-            if best_session:
-                forecast_summary += f". Best window: {best_session['start']} (~{best_session['avg_knots']}kts)"
-        else:
-            forecast_summary = "No forecast data available"
+        # Comprehensive Data Feed
+        prompt = f"""You are the Local Windsurf Legend. Talk like a seasoned pro—salty, punchy, and direct. 
+No introductory fluff. No repeating instructions. 
 
-        # Calculate actual board volume for the user's weight
-        user_weight_kg = int(user_weight)
-        
-        # Build a much cleaner, more focused prompt
-        prompt = f"""You are the Local Legend - an expert windsurfer giving practical advice to a {user_level} level rider ({user_weight}kg).
-### MASTER GEAR RULES & PHYSICS:
-{gear_kb}
+### EXPERT KNOWLEDGE (FUNDAMENTALS):
+{fundamentals}
 
+### SPOT NUANCES:
+{spot_kb}
 
-CURRENT CONDITIONS:
-Spot: {spot_name}
-Wind: {wind_now}kts, F{live.get('beaufort_f')} ({live.get('beaufort_name')}), gusts {live.get('gusts_knots')}kts
-Direction: {live.get('wind_relative')} (trend: {live.get('wind_trend')})
-Waves: {live.get('waves_m')}m, {live.get('wave_power_desc')} power
-Water: {live.get('water_temp')}°C
-Forecast: {forecast_summary}
+### THE LIVE DATA:
+- Rider: {user_level} ({user_weight}kg) at {meta.get('spot_name')}
+- Wind: {live.get('wind_knots')}kts (Gusts: {live.get('gusts_knots')}kts) | {live.get('wind_relative')} | {live.get('wind_trend')}
+- Sea: {live.get('waves_m')}m | {live.get('wave_steepness')} | {live.get('wave_power')} kW/m ({live.get('wave_power_desc')})
+- Environment: {live.get('water_temp')}°C Water | {live.get('sun_status')} | {live.get('visibility')}km visibility | {live.get('cloud_cover')}% Clouds
+- Tide: {live.get('tide_display')} | Flow: {live.get('tidal_flow')} | {live.get('next_tide_info')}
+- Engine Recommendation: {gear.get('sail_size_m2')}m / {gear.get('board_volume_l')}L
+- Calculated Sendiness: {live.get('sendiness_score')}/10
 
+### YOUR MISSION:
+1. DATA INTEGRITY: You must use the 'Calculated Sendiness' provided ({live.get('sendiness_score')}/10). Do not invent your own score.
+2. THE PERSPECTIVE SHIFT: 
+   - If Sendiness < 4: Your Vibe must be written from the perspective of someone standing ON THE BEACH. Do not use phrases like "you'll be survival sailing" or "hang on." Instead, explain why the conditions (e.g., onshore wind + light breeze) make it a "washout" or "SUP-only" day.
+   - If Sendiness >= 4: Write from the perspective of someone ON THE WATER giving active tactical advice.
+3. THE GEAR LOGIC: If Sendiness is < 4, output 'GEAR: N/A (Go to the Pub)'. Do not suggest sail sizes.
+4. WIND VS TIDE: If 'Flow' and 'Wind Relative' are in the same direction, explain that the tide will "rob" the sail of its power, making it feel 5 knots lighter than it is.
+5. SAFETY: Prioritize warnings for 'Golden Hour' (fading light) or cold water (<12°C).
 
-BOARD VOLUMES FOR {user_weight}KG RIDER:
-- Light wind (12-15kts): {user_weight_kg + 50}L (e.g. {user_weight_kg + 50}L board)
-- Moderate wind (15-25kts): {user_weight_kg + 20}L (e.g. {user_weight_kg + 20}L board)  
-- Strong wind (25kts+): {user_weight_kg + 10}L (e.g. {user_weight_kg + 10}L board)
-- Wave sailing: Reduce by 10-20L for maneuverability
-
-DISCIPLINES:
-- Waves 1.5m+ & cross-shore = Wave sailing (smaller gear for control)
-- Flat water & 20kts+ = Speed sailing  
-- General conditions = Freeride
-- Light wind = Learning/freeride only
-
-LOCAL KNOWLEDGE: {spot_kb[:200]}
-
-RESPONSE FORMAT:
-If wind < 12kts: "SENDINESS: 1-2/10. Too light for windsurfing - try SUP or foil setup instead."
-If wind 12-15kts: Give marginal advice with big gear
-If wind 15kts+: Give full session advice
-
-EXAMPLE GOOD RESPONSES:
-"SENDINESS: 8/10
-GEAR: 4.7m sail, 90L board
-DISCIPLINE: Wave sailing - perfect cross-shore conditions  
-WETSUIT: {wetsuit}
-SESSION: Hit the water at 14:00 for best conditions
-THE VIBE: Epic wave day! Cross-shore wind and clean power - watch the sandbar at low tide."
-
-CRITICAL RULES:
-- Do NOT hallucinate gear. Use the tables provided. If {user_weight}kg is between rows, lean toward the heavier row for safety
-- Give ACTUAL board volumes (e.g. "90L board" not formulas)
-- If you say "too light" or SENDINESS 1-2, do NOT recommend windsurfing gear
-- Never show technical formatting or backend calculations
-- Keep it conversational and practical
-- Conservative recommendations - better to say "too light" than recommend marginal gear
-- CRITICAL: If the wind is below 12kts, strictly follow the 'Too light' rule and do not suggest a sail size.
+RESPONSE FORMAT (STRICT):
+SENDINESS: [Use Calculated Sendiness]
+GEAR: [Exact Engine Gear OR "N/A (Go to the Pub)"]
+THE VIBE: [One paragraph, max 4 sentences. Match your perspective to the Sendiness score.]
+RESPONSE FORMAT (STRICT):
+SENDINESS: [Use Calculated Sendiness]
+GEAR: [Exact Engine Gear OR "N/A (Go to the Pub)"]
+THE VIBE: [One paragraph, max 4 sentences. Be the salty expert who knows the physics of this specific water.]
 """
 
+        # Using 0.3 to keep the Legend grounded in your Python math
         response = await client.chat.completions.create(
             model="meta-llama/llama-3.1-8b-instruct",
             messages=[{"role": "system", "content": prompt}],
-            temperature=0.2  # Even lower for maximum consistency
+            temperature=0.3 
         )
         return response.choices[0].message.content
 
     except Exception as e:
-        return f"The Legend is lost in the fog: {e}"
+        return f"The Legend is checking the rig: {str(e)}"
