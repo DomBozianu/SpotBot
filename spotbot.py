@@ -45,11 +45,16 @@ async def home(request: Request):
 
 
 @app.get("/api/vibe")
-async def get_vibe_api(spot: str, weight: int, level: str = "intermediate"):
+async def get_vibe_api(spot: str, weight: str = "75", level: str = "intermediate"):
     try:
-        report_data = await get_shred_report(spot, str(weight), level)
-        vibe = await get_ai_recommendation(report_data, weight, spot, level)
+        # 1. Validation: Ensure weight is a string to match get_shred_report signature
+        # 2. Performance: get_shred_report uses 'requests_cache', so this second 
+        #    call will be nearly instant (0.001s) since it pulls from local cache.
+        report_data = await get_shred_report(spot, weight, level)
+        
+        # Pass the weight as an int to the AI logic specifically if needed
+        vibe = await get_ai_recommendation(report_data, int(weight), spot, level)
         return {"vibe": vibe}
     except Exception as e:
         print(f"Vibe Error: {e}")
-        return {"vibe": "The Legend is speechless..."}
+        return {"vibe": "The Legend is currently lost in the fog. Try again in a minute!"}
