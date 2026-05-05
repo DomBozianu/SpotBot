@@ -618,59 +618,83 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
         "forecast_12h": trend_12h,
         "local_knowledge": wisdom
     }
+
 async def get_ai_recommendation(report, user_weight, spot_key, user_level):
     try:
         base_path = Path(__file__).parent / "spotbot_knowledge"
-        fundamentals = (base_path / "general" / "windsurfing_fundamentals.txt").read_text(encoding='utf-8')[:8000] if (base_path / "windsurfing_fundamentals.txt").exists() else ""
-        spot_kb = (base_path / "spots" / f"{spot_key}.txt").read_text(encoding='utf-8')[:4000] if (base_path / "spots" / f"{spot_key}.txt").exists() else ""
+        
+        # 1. Load Knowledge
+        fund_path = base_path / "general" / "windsurfing_fundamentals.txt"
+        fundamentals = fund_path.read_text(encoding='utf-8')[:3000] if fund_path.exists() else ""
+        spot_path = base_path / "spots" / f"{spot_key}.txt"
+        spot_kb = spot_path.read_text(encoding='utf-8')[:3000] if spot_path.exists() else ""
 
         live = report.get('live', {})
         meta = report.get('metadata', {})
         gear = live.get('recommended_gear', {})
         
-        # Comprehensive Data Feed
-        prompt = f"""You are the Local Windsurf Legend. Talk like a seasoned pro—salty, punchy, and direct. 
-No introductory fluff. No repeating instructions. 
+        # 2. Extract Data
+        sendiness = float(live.get('sendiness_score', 0))
+        wind_dir = live.get('wind_direction_name', 'Unknown')
+        t_flow = live.get('tidal_flow', 'Neutral') # Rising/Falling/Slack
+        w_rel = live.get('wind_relative', 'Unknown') # Onshore/Offshore/Cross-shore
+        tide_info = live.get('tide_display', 'Data unavailable')
+        
+        # 3. Nuanced Tide Logic
+        # Check for 0000 station or missing data
+        has_tide_data = "unavailable" not in tide_info.lower() and "0000" not in str(meta.get('tide_station_id', ''))
+        
+        tide_instruction = "This is an inland spot or tide data is missing. NEVER mention tides, currents, or flow."
+        if has_tide_data:
+            # Logic: Wind WITH tide robs power. Wind AGAINST tide adds grunt but creates chop.
+            if "falling" in t_flow.lower() and "offshore" in w_rel.lower():
+                tide_instruction = "The wind and tide are both heading out. Explain that the tide is 'robbing' the sail of power, making it feel 5 knots lighter."
+            elif "rising" in t_flow.lower() and "onshore" in w_rel.lower():
+                tide_instruction = "The wind and tide are both heading in. Explain that the tide is 'robbing' the sail of power."
+            elif ("falling" in t_flow.lower() and "onshore" in w_rel.lower()) or ("rising" in t_flow.lower() and "offshore" in w_rel.lower()):
+                tide_instruction = "The wind is fighting the tide. Explain that the tide is adding 'grunt' to the sail, but expect the water to get extra choppy."
+            else:
+                tide_instruction = f"The tide is {t_flow}. Mention how this flow might affect the drift at this specific spot."
 
-### EXPERT KNOWLEDGE (FUNDAMENTALS):
-{fundamentals}
+        # 4. Perspective: Always an expert on the beach
+        if sendiness < 3:
+            gear_str = "N/A (Go to the Pub)"
+            vibe_persp = "You are standing on the beach. Be disappointed. You are NOT going out."
+        else:
+            gear_str = f"{gear.get('sail_size_m2')}m / {gear.get('board_volume_l')}L"
+            vibe_persp = "You are an expert on the beach who just finished a session. Give tactical advice to those rigging up."
 
-### SPOT NUANCES:
-{spot_kb}
+        # 5. The Prompt
+        prompt = f"""You are the Local Windsurf Legend. Chilled, salty, and direct. 
+        NO meta-commentary, NO 'Note:', and NO repeating these instructions.
 
-### THE LIVE DATA:
-- Rider: {user_level} ({user_weight}kg) at {meta.get('spot_name')}
-- Wind: {live.get('wind_knots')}kts (Gusts: {live.get('gusts_knots')}kts) | {live.get('wind_relative')} | {live.get('wind_trend')}
-- Sea: {live.get('waves_m')}m | {live.get('wave_steepness')} | {live.get('wave_power')} kW/m ({live.get('wave_power_desc')})
-- Environment: {live.get('water_temp')}°C Water | {live.get('sun_status')} | {live.get('visibility')}km visibility | {live.get('cloud_cover')}% Clouds
-- Tide: {live.get('tide_display')} | Flow: {live.get('tidal_flow')} | {live.get('next_tide_info')}
-- Engine Recommendation: {gear.get('sail_size_m2')}m / {gear.get('board_volume_l')}L
-- Calculated Sendiness: {live.get('sendiness_score')}/10
+        DATA:
+        - Rider: {user_level} ({user_weight}kg) at {meta.get('spot_name')}
+        - Wind: {live.get('wind_knots')}kts {wind_dir}
+        - Sendiness: {sendiness}/10
+        - Tide: {tide_info if has_tide_data else 'NONE'}
+        
+        SPOT KNOWLEDGE:
+        {spot_kb}
+        Fundamentals:
+        {fundamentals}
 
-### YOUR MISSION:
-1. DATA INTEGRITY: You must use the 'Calculated Sendiness' provided ({live.get('sendiness_score')}/10). Do not invent your own score.
-2. THE PERSPECTIVE SHIFT: 
-   - If Sendiness < 4: Your Vibe must be written from the perspective of someone standing ON THE BEACH. Do not use phrases like "you'll be survival sailing" or "hang on." Instead, explain why the conditions (e.g., onshore wind + light breeze) make it a "washout" or "SUP-only" day.
-   - If Sendiness >= 4: Write from the perspective of someone ON THE WATER giving active tactical advice.
-3. THE GEAR LOGIC: If Sendiness is < 4, output 'GEAR: N/A (Go to the Pub)'. Do not suggest sail sizes.
-4. WIND VS TIDE: If 'Flow' and 'Wind Relative' are in the same direction, explain that the tide will "rob" the sail of its power, making it feel 5 knots lighter than it is.
-5. SAFETY: Prioritize warnings for 'Golden Hour' (fading light) or cold water (<12°C).
+        YOUR MISSION:
+        1. VIBE: {vibe_persp}
+        2. TIDE LOGIC: {tide_instruction}
+        3. GEOGRAPHY: Mention one specific hazard from SPOT KNOWLEDGE (e.g. the sandbar, river mouth, or rocks).
+        4. No flowery 'AI' language. Keep it under 60 words.
 
-RESPONSE FORMAT (STRICT):
-SENDINESS: [Use Calculated Sendiness]
-GEAR: [Exact Engine Gear OR "N/A (Go to the Pub)"]
-THE VIBE: [One paragraph, max 4 sentences. Match your perspective to the Sendiness score.]
-RESPONSE FORMAT (STRICT):
-SENDINESS: [Use Calculated Sendiness]
-GEAR: [Exact Engine Gear OR "N/A (Go to the Pub)"]
-THE VIBE: [One paragraph, max 4 sentences. Be the salty expert who knows the physics of this specific water.]
-"""
+        RESPONSE FORMAT:
+        SENDINESS: {sendiness}/10
+        GEAR: {gear_str}
+        THE VIBE: [One single paragraph of 3 sentences max.]
+        """
 
-        # Using 0.3 to keep the Legend grounded in your Python math
         response = await client.chat.completions.create(
             model="meta-llama/llama-3.1-8b-instruct",
             messages=[{"role": "system", "content": prompt}],
-            temperature=0.3 
+            temperature=0.6 
         )
         return response.choices[0].message.content
 

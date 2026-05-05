@@ -51,7 +51,7 @@
         "name": "Fermoyle, Brandon Bay",
         "lat": 52.2447306,
         "lon": -10.12794,
-        "tide_id": "0721",
+        "tide_id": "0000",
         "knowledge_file": "fermoyle_brandon_bay_ireland.txt",
         "shoreline_bearing": 0
     },
@@ -163,7 +163,7 @@
         "name": "Camber Sands, Camber Sands, Sussex",
         "lat": 50.9318815,
         "lon": 0.7737125,
-        "tide_id": "0086",
+        "tide_id": "0085",
         "knowledge_file": "camber_sands_camber_sands_sussex.txt",
         "shoreline_bearing": 180
     },
