@@ -5,7 +5,7 @@
         "lon": -2.45,
         "tide_id": "0033",
         "knowledge_file": "portland_harbour.txt",
-        "shoreline_bearing": 90
+        "shoreline_bearing": 305
     },
     "gwithian": {
         "name": "Gwithian",
@@ -39,60 +39,228 @@
         "knowledge_file": "demo_spot.txt",
         "shoreline_bearing": 180
     },
-    "rhosneigr": {
-        "name": "Rhosneigr (Broad Beach)",
-        "lat": 53.226,
-        "lon": -4.524,
-        "tide_id": "0451",
-        "knowledge_file": "rhosneigr.txt",
-        "shoreline_bearing": 225
-    },
-    "brandon_bay": {
-        "name": "Brandon Bay",
-        "lat": 52.2736371,
-        "lon": -10.1005283,
-        "tide_id": "0615",
-        "knowledge_file": "brandon_bay.txt",
-        "shoreline_bearing": 330
-    },
-    "hayling_island": {
-        "name": "Hayling Island",
-        "lat": 50.805649,
-        "lon": -0.9800545,
-        "tide_id": "0065",
-        "knowledge_file": "hayling_island.txt",
-        "shoreline_bearing": 180
-    },
-    "west_wittering": {
-        "name": "West Wittering",
-        "lat": 50.7833912,
-        "lon": -0.8919931,
-        "tide_id": "0068",
-        "knowledge_file": "west_wittering.txt",
-        "shoreline_bearing": 180
-    },
-    "west_mersea": {
-        "name": "west mersea",
-        "lat": 51.7739482,
-        "lon": 0.9189482,
-        "tide_id": "0000",
-        "knowledge_file": "west_mersea.txt",
-        "shoreline_bearing": 180
-    },
-    "brighton": {
-        "name": "Brighton",
-        "lat": 50.8214626,
-        "lon": -0.1400561,
-        "tide_id": "0072",
-        "knowledge_file": "brighton.txt",
-        "shoreline_bearing": 186
-    },
     "gott_bay_tiree": {
-        "name": "Gott Bay, tiree",
+        "name": "Gott Bay, Tiree",
         "lat": 56.516791,
         "lon": -6.7855873,
-        "tide_id": "4669",
+        "tide_id": "0357",
         "knowledge_file": "gott_bay_tiree.txt",
         "shoreline_bearing": 135
+    },
+    "fermoyle_brandon_bay_ireland": {
+        "name": "Fermoyle, Brandon Bay",
+        "lat": 52.2447306,
+        "lon": -10.12794,
+        "tide_id": "0721",
+        "knowledge_file": "fermoyle_brandon_bay_ireland.txt",
+        "shoreline_bearing": 0
+    },
+    "hayling_island_hampshire": {
+        "name": "Hayling Island, Hampshire",
+        "lat": 50.805649,
+        "lon": -0.9800545,
+        "tide_id": "0068",
+        "knowledge_file": "hayling_island_hampshire.txt",
+        "shoreline_bearing": 180
+    },
+    "west_wittering_west_wittering_sussex": {
+        "name": "West Wittering, Sussex",
+        "lat": 50.7807064,
+        "lon": -0.9042037,
+        "tide_id": "0068",
+        "knowledge_file": "west_wittering_west_wittering_sussex.txt",
+        "shoreline_bearing": 180
+    },
+    "poole_harbour_dorset": {
+        "name": "Poole Harbour, Dorset",
+        "lat": 50.6991691,
+        "lon": -1.9810698,
+        "tide_id": "0036",
+        "knowledge_file": "poole_harbour_dorset.txt",
+        "shoreline_bearing": 260
+    },
+    "marazion_beach_marazion_cornwall": {
+        "name": "Marazion Beach, Cornwall",
+        "lat": 50.1259209,
+        "lon": -5.4784063,
+        "tide_id": "0002",
+        "knowledge_file": "marazion_beach_marazion_cornwall.txt",
+        "shoreline_bearing": 180
+    },
+    "daymer_bay_cornwall": {
+        "name": "Daymer Bay, Cornwall",
+        "lat": 50.5601897,
+        "lon": -4.9293705,
+        "tide_id": "0545",
+        "knowledge_file": "daymer_bay_cornwall.txt",
+        "shoreline_bearing": 315
+    },
+    "broad_beach_rhosneigr_anglesey": {
+        "name": "Broad Beach, Rhosneigr, Anglesey",
+        "lat": 53.2237745,
+        "lon": -4.5191379,
+        "tide_id": "0479A",
+        "knowledge_file": "broad_beach_rhosneigr_anglesey.txt",
+        "shoreline_bearing": 225
+    },
+    "hunstanton_beach_hunstanton_norfolk": {
+        "name": "Hunstanton Beach, Hunstanton, Norfolk",
+        "lat": 52.9485485,
+        "lon": 0.4886003,
+        "tide_id": "0161",
+        "knowledge_file": "hunstanton_beach_hunstanton_norfolk.txt",
+        "shoreline_bearing": 270
+    },
+    "ray_southend-on-sea_essex": {
+        "name": "Ray, Southend-on-Sea, Essex",
+        "lat": 51.5443377,
+        "lon": 0.6374712,
+        "tide_id": "0110",
+        "knowledge_file": "ray_southend-on-sea_essex.txt",
+        "shoreline_bearing": 180
+    },
+    "troon_south_beach_ayrshire": {
+        "name": "Troon South Beach, Ayrshire",
+        "lat": 55.5408768,
+        "lon": -4.6630204,
+        "tide_id": "0412",
+        "knowledge_file": "troon_south_beach_ayrshire.txt",
+        "shoreline_bearing": 260
+    },
+    "watwick_bay_newgale_pembrokeshire": {
+        "name": "Watwick Bay, Newgale, Pembrokeshire",
+        "lat": 51.6926072,
+        "lon": -5.1599955,
+        "tide_id": "0493",
+        "knowledge_file": "watwick_bay_newgale_pembrokeshire.txt",
+        "shoreline_bearing": 250
+    },
+    "exmouth_duck_pond_devon": {
+        "name": "Exmouth Duck Pond, Devon",
+        "lat": 50.6227414,
+        "lon": -3.4179612,
+        "tide_id": "0027",
+        "knowledge_file": "exmouth_duck_pond_devon.txt",
+        "shoreline_bearing": 270
+    },
+    "calshot_beach": {
+        "name": "Calshot Beach",
+        "lat": 50.8143286,
+        "lon": -1.3090586,
+        "tide_id": "0061",
+        "knowledge_file": "calshot_beach.txt",
+        "shoreline_bearing": 135
+    },
+    "shoreham_beach_shoreham-by-sea_sussex": {
+        "name": "Shoreham Beach, Shoreham-by-Sea, Sussex",
+        "lat": 50.8308744,
+        "lon": -0.2597291,
+        "tide_id": "0081",
+        "knowledge_file": "shoreham_beach_shoreham-by-sea_sussex.txt",
+        "shoreline_bearing": 180
+    },
+    "camber_sands_camber_sands_sussex": {
+        "name": "Camber Sands, Camber Sands, Sussex",
+        "lat": 50.9318815,
+        "lon": 0.7737125,
+        "tide_id": "0086",
+        "knowledge_file": "camber_sands_camber_sands_sussex.txt",
+        "shoreline_bearing": 180
+    },
+    "bigbury_beach_bigbury-on-sea_devon": {
+        "name": "Bigbury Beach, Bigbury-on-Sea, Devon",
+        "lat": 50.2810583,
+        "lon": -3.8923211,
+        "tide_id": "0020",
+        "knowledge_file": "bigbury_beach_bigbury-on-sea_devon.txt",
+        "shoreline_bearing": 225
+    },
+    "hayle_beach_the_bluff_hayle": {
+        "name": "Hayle Beach, The Bluff, Hayle",
+        "lat": 50.198,
+        "lon": -5.428,
+        "tide_id": "0547",
+        "knowledge_file": "hayle_beach_the_bluff_hayle.txt",
+        "shoreline_bearing": 315
+    },
+    "fistral_beach_fistral_beach_cornwall": {
+        "name": "Fistral Beach, Fistral Beach, Cornwall",
+        "lat": 50.4182891,
+        "lon": -5.1003122,
+        "tide_id": "0546",
+        "knowledge_file": "fistral_beach_fistral_beach_cornwall.txt",
+        "shoreline_bearing": 290
+    },
+    "llandegfedd_reservoir_wales": {
+        "name": "Llandegfedd Reservoir, Wales",
+        "lat": 51.6915897,
+        "lon": -2.9685791,
+        "tide_id": "0000",
+        "knowledge_file": "llandegfedd_reservoir_wales.txt",
+        "shoreline_bearing": 345
+    },
+    "rhossili_bay_gower": {
+        "name": "Rhossili Bay, Gower",
+        "lat": 51.5683839,
+        "lon": -4.297138,
+        "tide_id": "0505",
+        "knowledge_file": "rhossili_bay_gower.txt",
+        "shoreline_bearing": 270
+    },
+    "menai_strait_wales": {
+        "name": "Menai Strait, Wales",
+        "lat": 53.1818971,
+        "lon": -4.2211247,
+        "tide_id": "0475",
+        "knowledge_file": "menai_strait_wales.txt",
+        "shoreline_bearing": 315
+    },
+    "minnis_bay_whitstable_kent": {
+        "name": "Minnis Bay, Whitstable, Kent",
+        "lat": 51.3792611,
+        "lon": 1.3015912,
+        "tide_id": "0105",
+        "knowledge_file": "minnis_bay_whitstable_kent.txt",
+        "shoreline_bearing": 0
+    },
+    "rutland_water_leicestershire": {
+        "name": "Rutland Water, Leicestershire",
+        "lat": 52.6556353,
+        "lon": -0.6222848,
+        "tide_id": "0000",
+        "knowledge_file": "rutland_water_leicestershire.txt",
+        "shoreline_bearing": 180
+    },
+    "vasiliki_vassiliki_lefkada": {
+        "name": "Vasiliki, Vassiliki, Lefkada",
+        "lat": 38.6268635,
+        "lon": 20.6067336,
+        "tide_id": "0000",
+        "knowledge_file": "vasiliki_vassiliki_lefkada.txt",
+        "shoreline_bearing": 180
+    },
+    "joss_bay_kent": {
+        "name": "Joss Bay, Kent",
+        "lat": 51.3795479,
+        "lon": 1.4461386,
+        "tide_id": "0102A",
+        "knowledge_file": "joss_bay_kent.txt",
+        "shoreline_bearing": 45
+    },
+    "pagham": {
+        "name": "Pagham",
+        "lat": 50.7706947,
+        "lon": -0.7394133,
+        "tide_id": "0072",
+        "knowledge_file": "pagham.txt",
+        "shoreline_bearing": 135
+    },
+    "hove_lagoon": {
+        "name": "Hove Lagoon",
+        "lat": 50.8264598,
+        "lon": -0.1952694,
+        "tide_id": "0000",
+        "knowledge_file": "hove_lagoon.txt",
+        "shoreline_bearing": 0
     }
 }

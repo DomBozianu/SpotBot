@@ -26,6 +26,9 @@ async def home(request: Request):
         report_data = await get_shred_report(spot_key, weight, level)
         # AI vibe is fetched client-side via /api/vibe after page load for better UX
 
+    # Sort the spots alphabetically by their Name for the dropdown
+    sorted_spots = dict(sorted(SPOTS.items(), key=lambda item: item[1]['name']))
+
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -33,7 +36,7 @@ async def home(request: Request):
             "report": report_data,
             "user_weight": weight,
             "user_level": level,
-            "all_spots": SPOTS,
+            "all_spots": sorted_spots,
             "kb_beaufort": KNOWLEDGE["beaufort_scale"],
             "kb_glossary": KNOWLEDGE["glossary"],
             "kb_sail_matrix": KNOWLEDGE["sail_matrix"]

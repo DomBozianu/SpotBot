@@ -418,6 +418,19 @@
     // (spots lat/lon are embedded via data attributes below)
     const spotMarkers = {};
 
+    // SECTION 1.5: DROPDOWN SNAP
+    // When user changes the dropdown, the map should move to that spot
+    const spotDropdown = document.querySelector('select[name="spot"]');
+    if (spotDropdown) {
+        spotDropdown.addEventListener('change', function(e) {
+            const selectedKey = e.target.value;
+            const marker = spotMarkers[selectedKey];
+            if (marker) {
+                map.setView(marker.getLatLng(), 12); // Zoom in
+                marker.openPopup();
+            }
+        });
+    }
     // =========================================================
     // SECTION 2: SPOT MARKERS
     // Spots are rendered server-side into data attributes to avoid Jinja-in-JS issues.

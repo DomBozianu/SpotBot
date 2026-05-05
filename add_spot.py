@@ -207,6 +207,7 @@ async def main():
         bearing = calculate_shoreline_bearing(lat, lon)
         console.print(f"[green]Scouting: {full_name}[/green]")
         console.print(f"[blue]Shoreline Bearing: {bearing}°[/blue]")
+        bearing = Prompt.ask("Confirm bearing", default = bearing)
 
         # --- RESEARCH ---
         content = ""
@@ -235,7 +236,7 @@ async def main():
         live_spots[key] = {
             "name": target_name, "lat": lat, "lon": lon, 
             "tide_id": tide_id, "knowledge_file": f"{key}.txt", 
-            "shoreline_bearing": bearing
+            "shoreline_bearing": int(bearing)
         }
         
         LIVE_SPOTS_PATH.write_text(json.dumps(live_spots, indent=4), encoding='utf-8')
