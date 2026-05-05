@@ -50,7 +50,9 @@ async def fetch_all_data(lat, lon, tide_id):
     return weather_res, marine_res, tides
 
 def calculate_gear(weight_kg, wind_speed_kts, skill_level="intermediate", discipline="freeride"):
-    """Calculates gear with discipline offsets."""
+    """Calculates gear with rig-weight adjusted sinker logic."""
+    
+    # 1. Base Sail Step-Ladder
     if wind_speed_kts < 12: base_sail = 8.0
     elif 12 <= wind_speed_kts < 16: base_sail = 7.0
     elif 16 <= wind_speed_kts < 20: base_sail = 6.0
@@ -58,22 +60,58 @@ def calculate_gear(weight_kg, wind_speed_kts, skill_level="intermediate", discip
     elif 25 <= wind_speed_kts < 30: base_sail = 4.2
     else: base_sail = 3.7
 
-    # Weight Adjustment
+    # 2. Weight Adjustment (+/- 0.5m per 10kg from 75kg)
     weight_diff = (weight_kg - 75) / 10
-    recommended_sail = round(base_sail + (weight_diff * 0.5), 1)
+    recommended_sail = base_sail + (weight_diff * 0.5)
 
-    # DISCIPLINE OFFSET (Variable name to remember: 'discipline')
-    offsets = {"wave": -0.5, "foil": -2.0, "freeride": 0.0}
-    recommended_sail += offsets.get(discipline, 0)
+    discipline = discipline.lower()
 
-    # Board Volume Logic (unchanged)
-    reserve_map = {"beginner": 100, "intermediate": 40, "advanced": 15}
-    recommended_volume = int(weight_kg + 20 + reserve_map.get(skill_level, 40))
+    # 3. Discipline Offsets
+    discipline_offsets = {
+        "wave": -0.5, 
+        "freestyle": -0.4, 
+        "freeride": 0.0
+    }
+    recommended_sail += discipline_offsets.get(discipline, 0)
+    final_sail = round(max(3.0, min(10.0, recommended_sail)), 1)
+
+    # 4. Board Volume Logic (Mapped to your 3 HTML options)
+    # Beginner: Needs to uphaul (Weight + 100)
+    # Intermediate: Needs a safety margin (Weight + 40)
+    # Advanced: Only needs enough to plane (Weight + 15)
+    reserve_map = {
+        "novice": 100, 
+        "intermediate": 40, 
+        "advanced": 15
+    }
+    # 4. Board Volume Logic (Wind-Adjusted)
+    # Start with the base safety margin from the skill level
+    reserve = reserve_map.get(skill_level, 40)
     
+    # --- HIGH WIND TAX ---
+    # For every 5 knots above 20kts, drop the volume by 5L to maintain control.
+    # On a 30kt day, this reduces the board size by 10L.
+    if wind_speed_kts > 20:
+        wind_reduction = ((wind_speed_kts - 20) / 5) * 5
+        reserve -= wind_reduction
+
+    # Combine body weight with the wind-adjusted reserve
+    recommended_volume = int(weight_kg + reserve)
+    
+    # Final discipline adjustment: Wave/Freestyle boards are naturally lower volume
+    if discipline in ["wave", "freestyle"]:
+        recommended_volume -= 10
+
+    # 5. Sinker Logic (Accounting for ~15kg of Rig, Wetsuit, and Water)
+    # If volume is less than (Body Weight + 15kg rig), it's a sinker.
+    rig_weight_buffer = 15 
+    is_sinker = recommended_volume < (weight_kg + rig_weight_buffer)
+
     return {
-        "sail_size_m2": max(3.0, recommended_sail), # Don't suggest smaller than a 3.0m
-        "board_volume_l": recommended_volume,
-        "is_sinker": recommended_volume <= (weight_kg + 20)
+        "sail": f"{final_sail}m²",
+        "board": f"{recommended_volume}L",
+        "type": discipline,
+        "is_sinker": is_sinker
     }
 
 def calculate_wave_power(height, period):
@@ -266,7 +304,7 @@ def fetch_spot_data(lat, lon):
 
 def fetch_tide_data(station_id):
     # FIX: Use the same key name as add_spot.py
-    api_key = os.getenv("ADMIRALTY_API_KEY") or os.getenv("ADMIRALTY_KEY")
+    api_key = os.getenv("ADMIRALTY_API_KEY")
     if not api_key: return []
     
     if station_id == "0000": return []
@@ -416,11 +454,13 @@ def process_marine_data(marine, current_hour_idx):
         "temp": final_temp
     }
 
-def get_demo_report():
+def get_demo_report(user_weight="75", level="intermediate", user_discipline="wave"):
     """Returns the hardcoded 'Nuking' report for demos."""
     # Move your existing 'demo_epic' dictionary here
     demo_wind = 26.5
     demo_relative = "💎 Cross-shore"
+    weight_int = int(user_weight) if str(user_weight).isdigit() else 75
+    demo_gear = calculate_gear(weight_int, demo_wind, level, discipline=user_discipline)    
     demo_score, demo_label = get_sendiness_score(demo_wind, demo_relative)
     demo_session = {"start": "14:00", "avg_knots": 24.5}
     demo_wetsuit = get_wetsuit_rec(12)
@@ -484,22 +524,18 @@ def get_demo_report():
             "air_temp": 14,
             "cloud_cover": 20,
             "visibility": 15.0,
-            "recommended_gear": {
-                "sail_size_m2": 4.2, 
-                "board_volume_l": 84, 
-                "is_sinker": True
-            },
+            "recommended_gear": demo_gear,
         },
         "forecast_12h": demo_forecast,
         "local_knowledge": "Perfect cross-shore conditions. Watch the sandbar at low tide."
     }
 
-async def get_shred_report(spot_key: str, user_weight: str = "75", level="intermediate"):
+async def get_shred_report(spot_key: str, user_weight: str = "75", level="intermediate", user_discipline='auto'):
     spot = SPOTS.get(spot_key)
     if not spot: return None
 
     if spot_key == "demo_epic":
-        return get_demo_report()
+        return get_demo_report(user_weight, level, user_discipline)
 
     # 2. Parallel Fetching (The Optimization)
     weather, marine, tides = await fetch_all_data(spot['lat'], spot['lon'], spot['tide_id'])
@@ -530,9 +566,23 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     marine_data = process_marine_data(marine, current_hour_idx)
     trend_12h = process_forecast(weather.Hourly(), current_hour_idx, tz_name)
 
+    # --- NEW: Identify Discipline BEFORE calculating gear ---
+    # Determine discipline: User Choice vs Data-Driven Fallback
+    if user_discipline == "auto":
+        if marine_data['height'] > 1.2 and wind_spd > 18:
+            final_discipline = "wave"
+        elif wind_spd > 15 and wind_spd < 25 and marine_data['height'] < 0.6:
+            final_discipline = "freestyle"
+        else:
+            final_discipline = "freeride"
+    else:
+        final_discipline = user_discipline
+
+# Now use final_discipline for gear and the rest of the report
+    
     # 5. Physics & Logic
     weight_int = int(user_weight) if user_weight.isdigit() else 75
-    gear = calculate_gear(weight_int, wind_spd, level, discipline="freeride")
+    gear = calculate_gear(weight_int, wind_spd, level, discipline=final_discipline)    
     rel_wind = get_relative_wind(wind_deg, spot.get('shoreline_bearing'))
     sendiness_score, sendiness_label = get_sendiness_score(safe_wind, rel_wind)
     beaufort = get_beaufort(wind_spd)
@@ -619,82 +669,129 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
         "local_knowledge": wisdom
     }
 
-async def get_ai_recommendation(report, user_weight, spot_key, user_level):
+async def get_ai_recommendation(report, user_weight, spot_key, user_level, user_discipline):
     try:
+        # 1. Setup paths and load ONLY the spot-specific info
         base_path = Path(__file__).parent / "spotbot_knowledge"
-        
-        # 1. Load Knowledge
-        fund_path = base_path / "general" / "windsurfing_fundamentals.txt"
-        fundamentals = fund_path.read_text(encoding='utf-8')[:3000] if fund_path.exists() else ""
         spot_path = base_path / "spots" / f"{spot_key}.txt"
-        spot_kb = spot_path.read_text(encoding='utf-8')[:3000] if spot_path.exists() else ""
+        spot_kb = spot_path.read_text(encoding='utf-8')[:10000] if spot_path.exists() else "Standard beach break."
 
         live = report.get('live', {})
         meta = report.get('metadata', {})
         gear = live.get('recommended_gear', {})
-        
-        # 2. Extract Data
+        final_discipline = gear.get('type', user_discipline)
+        # 2. Extract Key Data
         sendiness = float(live.get('sendiness_score', 0))
-        wind_dir = live.get('wind_direction_name', 'Unknown')
-        t_flow = live.get('tidal_flow', 'Neutral') # Rising/Falling/Slack
-        w_rel = live.get('wind_relative', 'Unknown') # Onshore/Offshore/Cross-shore
-        tide_info = live.get('tide_display', 'Data unavailable')
-        
-        # 3. Nuanced Tide Logic
-        # Check for 0000 station or missing data
-        has_tide_data = "unavailable" not in tide_info.lower() and "0000" not in str(meta.get('tide_station_id', ''))
-        
-        tide_instruction = "This is an inland spot or tide data is missing. NEVER mention tides, currents, or flow."
-        if has_tide_data:
-            # Logic: Wind WITH tide robs power. Wind AGAINST tide adds grunt but creates chop.
-            if "falling" in t_flow.lower() and "offshore" in w_rel.lower():
-                tide_instruction = "The wind and tide are both heading out. Explain that the tide is 'robbing' the sail of power, making it feel 5 knots lighter."
-            elif "rising" in t_flow.lower() and "onshore" in w_rel.lower():
-                tide_instruction = "The wind and tide are both heading in. Explain that the tide is 'robbing' the sail of power."
-            elif ("falling" in t_flow.lower() and "onshore" in w_rel.lower()) or ("rising" in t_flow.lower() and "offshore" in w_rel.lower()):
-                tide_instruction = "The wind is fighting the tide. Explain that the tide is adding 'grunt' to the sail, but expect the water to get extra choppy."
-            else:
-                tide_instruction = f"The tide is {t_flow}. Mention how this flow might affect the drift at this specific spot."
+        wind_knots = live.get('wind_knots', 0)
+        gusts = live.get('gusts_knots', 0)
+        wind_dir = live.get('wind_dir_name', 'Unknown')
+        t_flow = live.get('tidal_flow', 'Neutral')
+        w_rel = live.get('wind_relative', 'Unknown')
+        temp = float(live.get('air_temp', 12))
 
-        # 4. Perspective: Always an expert on the beach
-        if sendiness < 3:
-            gear_str = "N/A (Go to the Pub)"
-            vibe_persp = "You are standing on the beach. Be disappointed. You are NOT going out."
+        # 1. Identify the Discipline
+        is_wave_session = float(live.get('waves_m', 0)) > 1.2
+        is_high_wind = float(live.get('wind_knots', 0)) > 25
+
+        # 2. Determine the "Vibe Label"
+        if is_wave_session:
+            session_label = "This is a proper WAVE session. Focus on surf safety and jumping."
+        elif is_high_wind:
+            session_label = "This is a high-wind BLASTING session. Focus on control and survival."
         else:
-            gear_str = f"{gear.get('sail_size_m2')}m / {gear.get('board_volume_l')}L"
-            vibe_persp = "You are an expert on the beach who just finished a session. Give tactical advice to those rigging up."
-
-        # 5. The Prompt
-        prompt = f"""You are the Local Windsurf Legend. Chilled, salty, and direct. 
-        NO meta-commentary, NO 'Note:', and NO repeating these instructions.
-
-        DATA:
-        - Rider: {user_level} ({user_weight}kg) at {meta.get('spot_name')}
-        - Wind: {live.get('wind_knots')}kts {wind_dir}
-        - Sendiness: {sendiness}/10
-        - Tide: {tide_info if has_tide_data else 'NONE'}
+            session_label = "This is a standard FREERIDE session. Focus on carving and speed."
         
-        SPOT KNOWLEDGE:
-        {spot_kb}
-        Fundamentals:
-        {fundamentals}
+        # 3. Pre-Calculate the "Truths" (LLM just writes these into the story)
+        # 3. Pre-Calculate the "Truths"
+        if sendiness < 3.5:
+            gear_fact = "N/A"
+            vibe_mode = "Disappointed and salty. You are standing in the rain looking at a flat sea. You’re heading to the pub and telling others not to bother."
+            mood = "Grumpy"
+        elif sendiness < 7.0:
+            gear_fact = f"{gear.get('sail')} sail and {gear.get('board')} board"
+            vibe_mode = "Chill and helpful. You just finished a decent session. You're leaning against your van, watching the water and giving tactical advice."
+            mood = "Stoked"
+        else:
+            gear_fact = f"{gear.get('sail')} sail and {gear.get('board')} board"
+            vibe_mode = "Hyped and direct! Conditions are epic/heavy. You're out of breath from an intense session and warning people it's a wild ride out there."
+            mood = "Adrenaline-fueled"
 
-        YOUR MISSION:
-        1. VIBE: {vibe_persp}
-        2. TIDE LOGIC: {tide_instruction}
-        3. GEOGRAPHY: Mention one specific hazard from SPOT KNOWLEDGE (e.g. the sandbar, river mouth, or rocks).
-        4. No flowery 'AI' language. Keep it under 60 words.
+       # 3. Nuanced Tide Logic
+        has_tide = "0000" not in str(meta.get('tide_station_id', '')) and "unavailable" not in live.get('tide_display', '').lower()
+        
+        # Initialize with a default value to prevent the 'not associated with a value' error
+        tide_fact = "The tide is mellow." 
 
-        RESPONSE FORMAT:
-        SENDINESS: {sendiness}/10
-        GEAR: {gear_str}
-        THE VIBE: [One single paragraph of 3 sentences max.]
+        if not has_tide:
+            tide_fact = "This is inland/reservoir. Do NOT mention tides, flow, or currents."
+        else:
+            # Physics: Wind WITH tide robs power. Wind AGAINST tide adds grunt.
+            is_aligned = ("falling" in t_flow.lower() and "offshore" in w_rel.lower()) or \
+                         ("rising" in t_flow.lower() and "onshore" in w_rel.lower())
+
+            is_fighting = ("falling" in t_flow.lower() and "onshore" in w_rel.lower()) or \
+                          ("rising" in t_flow.lower() and "offshore" in w_rel.lower())
+
+            if is_aligned:
+                tide_fact = "The wind and tide are aligned—it'll rob 5 knots of power from the sail."
+            elif is_fighting:
+                tide_fact = "Wind is fighting the tide—expect extra 'grunt' in the sail but messy chop."
+            else:
+                # Fallback for Slack water or Cross-shore flow
+                tide_fact = f"Tide is {t_flow}. Mention how it affects the drift or launch."
+
+        # Temperature Fact
+        temp_fact = "It's freezing (sub-8°C). Mention a thick 5/4 wetsuit and boots." if temp < 8 else "Standard wetsuit weather."
+
+        # 4. Few-Shot Prompting (The "Many-Shot" approach)
+        prompt = f"""You are the Local Windsurf Legend. Chilled out windsurfer who is a great gear recommender.
+        Current Mood: {mood}
+        Your Location: {vibe_mode}
+
+        EXAMPLES OF TONE:
+        - (Grumpy): "Don't bother rigging, mate. It's a mirror out there and I'm off for a pint."
+        - (Stoked): "Solid session! The {gear_fact} was perfect for carving the swell."
+
+        EXAMPLES OF THE VIBE:
+        
+        Input: Sendiness 2/10, Wind 8kts, Inland, Gear: Pub.
+        Output: "Standing on the pebbles at Llandegfedd and it's a mirror, mate. A measly 8 knots won't even wiggle a flag, let alone a sail. Don't bother rigging—I'm heading to the pub to wait for a real breeze."
+        
+        Input: Sendiness 8/10, Wind 22kts, Tidal, Gear: 4.7m/85L.
+        Output: "Just came in and it's firing! That 4.7m was the call with the wind fighting the tide—it’s giving the sail heaps of grunt but the chop is getting technical. Watch the rips near the estuary mouth if you're heading out now."
+        
+        Input: Sendiness 5/10, Wind 16kts, Tidal (Aligned), Gear: 6.5m/110L.
+        Output: "Not bad, but that ebbing tide is running with the wind, so it's robbing you of about 5 knots of pull. I'd rig the 6.5m to keep the power up. Keep an eye on the sandbar as the tide drops—it'll catch your fin if you aren't careful."
+
+        CURRENT DATA:
+        - Rider at: {meta.get('spot_name')}
+        - Wind: {wind_knots}kts {wind_dir} (Gusts: {gusts}kts)
+        - Sendiness: {sendiness}/10
+        - Gear to use: {gear_fact}
+        - Tide Fact: {tide_fact}
+        - Environment: {temp_fact}
+        - Spot Hazards: {spot_kb}
+        - Session type: {session_label}
+        - Rider Profile: {user_level} level, {user_weight}kg.
+        - Chosen Discipline: {user_discipline} (Finalized as: {final_discipline}).
+        ...
+        If they chose 'Wave' but it's flat, or 'Freeride' but it's 40 knots, give them the Legend's honest take on that choice.
+
+        MISSION:
+        Write THE VIBE.
+        1. Perspective: {vibe_mode}.
+        2. If gear is 'N/A', do NOT use those words. Instead, tell them to grab a paddleboard, go to the pub or take the day off.
+        3. STRICT: Explicitly recommend the {gear_fact}. Tell the rider why this kit fits the current {wind_knots}kt conditions and {session_label}.
+        4. Include the Tide Fact: {tide_fact}.
+        5. Mention one hazard from 'Spot Hazards'.
+        6. Use a "You should..." or "Rig the..." tone so the user knows exactly what to do.
+        7. STRICT: 3 sentences max.
         """
 
         response = await client.chat.completions.create(
             model="meta-llama/llama-3.1-8b-instruct",
             messages=[{"role": "system", "content": prompt}],
-            temperature=0.6 
+            temperature=0.6
         )
         return response.choices[0].message.content
 

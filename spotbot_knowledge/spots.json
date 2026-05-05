@@ -1,6 +1,6 @@
 {
     "portland_harbour": {
-        "name": "Portland Harbour",
+        "name": "Portland Harbour, Weymouth",
         "lat": 50.58,
         "lon": -2.45,
         "tide_id": "0033",
@@ -8,7 +8,7 @@
         "shoreline_bearing": 305
     },
     "gwithian": {
-        "name": "Gwithian",
+        "name": "Gwithian, Cornwall",
         "lat": 50.22,
         "lon": -5.39,
         "tide_id": "0547",
@@ -16,7 +16,7 @@
         "shoreline_bearing": 315
     },
     "kimmeridge_bay": {
-        "name": "Kimmeridge Bay",
+        "name": "Kimmeridge Bay, Dorset",
         "lat": 50.6,
         "lon": -2.13,
         "tide_id": "0035",
@@ -24,7 +24,7 @@
         "shoreline_bearing": 180
     },
     "west_kirby": {
-        "name": "West Kirby",
+        "name": "West Kirby, Wirral",
         "lat": 53.37,
         "lon": -3.19,
         "tide_id": "0451",
@@ -32,7 +32,7 @@
         "shoreline_bearing": 270
     },
     "demo_epic": {
-        "name": "DEMO: Epic Peak",
+        "name": "DEMO: Epic Spot",
         "lat": 50.0,
         "lon": -2.0,
         "tide_id": "0451",
@@ -104,7 +104,7 @@
         "shoreline_bearing": 225
     },
     "hunstanton_beach_hunstanton_norfolk": {
-        "name": "Hunstanton Beach, Hunstanton, Norfolk",
+        "name": "Hunstanton Beach, Norfolk",
         "lat": 52.9485485,
         "lon": 0.4886003,
         "tide_id": "0161",
@@ -128,7 +128,7 @@
         "shoreline_bearing": 260
     },
     "watwick_bay_newgale_pembrokeshire": {
-        "name": "Watwick Bay, Newgale, Pembrokeshire",
+        "name": "Watwick Bay, Pembrokeshire",
         "lat": 51.6926072,
         "lon": -5.1599955,
         "tide_id": "0493",
@@ -144,7 +144,7 @@
         "shoreline_bearing": 270
     },
     "calshot_beach": {
-        "name": "Calshot Beach",
+        "name": "Calshot Beach, Hampshire",
         "lat": 50.8143286,
         "lon": -1.3090586,
         "tide_id": "0061",
@@ -152,7 +152,7 @@
         "shoreline_bearing": 135
     },
     "shoreham_beach_shoreham-by-sea_sussex": {
-        "name": "Shoreham Beach, Shoreham-by-Sea, Sussex",
+        "name": "Shoreham Beach, Sussex",
         "lat": 50.8308744,
         "lon": -0.2597291,
         "tide_id": "0081",
@@ -160,7 +160,7 @@
         "shoreline_bearing": 180
     },
     "camber_sands_camber_sands_sussex": {
-        "name": "Camber Sands, Camber Sands, Sussex",
+        "name": "Camber Sands, Sussex",
         "lat": 50.9318815,
         "lon": 0.7737125,
         "tide_id": "0085",
@@ -168,7 +168,7 @@
         "shoreline_bearing": 180
     },
     "bigbury_beach_bigbury-on-sea_devon": {
-        "name": "Bigbury Beach, Bigbury-on-Sea, Devon",
+        "name": "Bigbury Beach, Devon",
         "lat": 50.2810583,
         "lon": -3.8923211,
         "tide_id": "0020",
@@ -176,7 +176,7 @@
         "shoreline_bearing": 225
     },
     "hayle_beach_the_bluff_hayle": {
-        "name": "Hayle Beach, The Bluff, Hayle",
+        "name": "The Bluff, Hayle",
         "lat": 50.198,
         "lon": -5.428,
         "tide_id": "0547",
@@ -184,7 +184,7 @@
         "shoreline_bearing": 315
     },
     "fistral_beach_fistral_beach_cornwall": {
-        "name": "Fistral Beach, Fistral Beach, Cornwall",
+        "name": "Fistral Beach, Cornwall",
         "lat": 50.4182891,
         "lon": -5.1003122,
         "tide_id": "0546",
@@ -216,7 +216,7 @@
         "shoreline_bearing": 315
     },
     "minnis_bay_whitstable_kent": {
-        "name": "Minnis Bay, Whitstable, Kent",
+        "name": "Minnis Bay, Kent",
         "lat": 51.3792611,
         "lon": 1.3015912,
         "tide_id": "0105",
@@ -232,7 +232,7 @@
         "shoreline_bearing": 180
     },
     "vasiliki_vassiliki_lefkada": {
-        "name": "Vasiliki, Vassiliki, Lefkada",
+        "name": "Vasiliki, Lefkada",
         "lat": 38.6268635,
         "lon": 20.6067336,
         "tide_id": "0000",
@@ -248,7 +248,7 @@
         "shoreline_bearing": 45
     },
     "pagham": {
-        "name": "Pagham",
+        "name": "Pagham, Sussex",
         "lat": 50.7706947,
         "lon": -0.7394133,
         "tide_id": "0072",
@@ -256,7 +256,7 @@
         "shoreline_bearing": 135
     },
     "hove_lagoon": {
-        "name": "Hove Lagoon",
+        "name": "Hove Lagoon, Brighton",
         "lat": 50.8264598,
         "lon": -0.1952694,
         "tide_id": "0000",

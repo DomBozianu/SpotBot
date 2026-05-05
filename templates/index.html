@@ -88,7 +88,16 @@
                             <option value="advanced" {% if user_level == 'advanced' %}selected{% endif %}>Advanced (Legend)</option>
                         </select>
                     </div>
-
+                    <!-- Discipline Dropdown -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-uppercase" style="font-size: 0.75rem;">Discipline</label>
+                        <select name="discipline" class="form-select border-2 shadow-sm w-100" style="height: 48px;">
+                            <option value="auto" {% if request.query_params.get('discipline') == 'auto' or not request.query_params.get('discipline') %}selected{% endif %}>✨ Auto-Detect</option>
+                            <option value="freeride" {% if request.query_params.get('discipline') == 'freeride' %}selected{% endif %}>🚀 Freeride</option>
+                            <option value="wave" {% if request.query_params.get('discipline') == 'wave' %}selected{% endif %}>🌊 Wave</option>
+                            <option value="freestyle" {% if request.query_params.get('discipline') == 'freestyle' %}selected{% endif %}>🧬 Freestyle</option>
+                        </select>
+                    </div>
                     <button type="submit" id="submitBtn" class="btn btn-primary btn-lg w-100">
                         <span id="spinner" class="spinner-border spinner-border-sm d-none me-2" role="status"></span>
                         <span id="btnText">Get Shred Report</span>
@@ -352,7 +361,11 @@
                 <!-- Current rider highlight -->
                 <div class="p-4 bg-light border-bottom">
                     <h6 class="fw-bold mb-1 text-success">Your Profile: {{ user_weight }}kg, {{ user_level|title }} Level</h6>
-                    <small class="text-muted">Board Volume: Weight + {{ 40 if user_level == 'novice' else 20 if user_level == 'advanced' else 30 }}L = {{ user_weight|int + (40 if user_level == 'novice' else 20 if user_level == 'advanced' else 30) }}L</small>
+                    <small class="text-muted">
+                        <!-- Update these numbers to match engine.py reserve_map -->
+                        Board Volume: Weight + {{ 100 if user_level == 'novice' else 15 if user_level == 'advanced' else 40 }}L 
+                        = {{ user_weight|int + (100 if user_level == 'novice' else 15 if user_level == 'advanced' else 40) }}L
+                    </small>
                 </div>
 
                 <div class="table-responsive">
@@ -581,24 +594,27 @@
     // Fetches the Legend's advice after page load to avoid blocking the render.
     // Passes spot, weight, AND level so the AI gets the full picture.
     // =========================================================
-    window.addEventListener('load', function () {
-        const vibeDisplay = document.getElementById('vibeDisplay');
-        const urlParams = new URLSearchParams(window.location.search);
-        const spot = urlParams.get('spot');
-        const weight = urlParams.get('weight') || '75';
-        const level = urlParams.get('level') || 'intermediate';
+    document.addEventListener('DOMContentLoaded', function () {
+    const vibeDisplay = document.getElementById('vibeDisplay');
+    const urlParams = new URLSearchParams(window.location.search);
+    const spot = urlParams.get('spot');
+    const weight = urlParams.get('weight') || '75';
+    const level = urlParams.get('level') || 'intermediate';
+    const discipline = urlParams.get('discipline') || 'auto';
 
-        if (spot && vibeDisplay) {
-            fetch(`/api/vibe?spot=${spot}&weight=${weight}&level=${level}`)
-                .then(r => r.json())
-                .then(data => {
-                    // Preserve line breaks from the Legend's formatted output
-                    vibeDisplay.style.whiteSpace = 'pre-line';
-                    vibeDisplay.innerText = data.vibe;
-                })
-                .catch(() => { vibeDisplay.innerText = "The Legend is lost in the fog."; });
-        }
-    });
+    if (spot && vibeDisplay) {
+        // This fires immediately while maps and charts are still loading
+        fetch(`/api/vibe?spot=${spot}&weight=${weight}&level=${level}&discipline=${discipline}`)
+            .then(r => r.json())
+            .then(data => {
+                vibeDisplay.style.whiteSpace = 'pre-line';
+                vibeDisplay.innerText = data.vibe;
+            })
+            .catch(() => { 
+                vibeDisplay.innerText = "The Legend is lost in the fog."; 
+            });
+    }
+});
 </script>
 <script>
     document.addEventListener("DOMContentLoaded", function() {
