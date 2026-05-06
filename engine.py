@@ -10,6 +10,7 @@ import json
 from datetime import datetime
 import numpy as np
 import math
+import tempfile
 
 # Environment & AI Setup
 env_path = Path(__file__).parent / ".env"
@@ -22,8 +23,9 @@ client = AsyncOpenAI(
     max_retries=2
 )
 
-# Open-Meteo Setup
-cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
+# Create the path in the /tmp directory for Cloud Run compatibility
+cache_path = os.path.join(tempfile.gettempdir(), "spotbot_cache")
+cache_session = requests_cache.CachedSession(cache_path, expire_after=3600)
 retry_session = retry(cache_session, retries=5)
 openmeteo = openmeteo_requests.Client(session=retry_session)
 
@@ -114,6 +116,16 @@ def calculate_gear(weight_kg, wind_speed_kts, skill_level="intermediate", discip
         "is_sinker": is_sinker
     }
 
+def determine_discipline(user_choice, wave_height, wind_speed):
+    if user_choice != "auto":
+        return user_choice
+    
+    if wave_height > 1.2 and wind_speed > 18:
+        return "wave"
+    elif wind_speed > 15 and wave_height < 0.6:
+        return "freestyle"
+    return "freeride"
+
 def calculate_wave_power(height, period):
     """
     Calculates wave power in kW/m and returns both the value and a description.
@@ -145,19 +157,36 @@ def calculate_steepness(height, period):
     return "Rolling/Fat"
 
 def get_beaufort(knots):
-    if knots < 1:  return {"f": 0, "name": "Calm", "desc": "Mirror flat"}
-    if knots < 4:  return {"f": 1, "name": "Light Air", "desc": "Ripples"}
-    if knots < 7:  return {"f": 2, "name": "Light Breeze", "desc": "Small wavelets"}
-    if knots < 11: return {"f": 3, "name": "Gentle Breeze", "desc": "Large wavelets"}
-    if knots < 17: return {"f": 4, "name": "Moderate Breeze", "desc": "Small waves"}
-    if knots < 22: return {"f": 5, "name": "Fresh Breeze", "desc": "Many whitecaps"}
-    if knots < 28: return {"f": 6, "name": "Strong Breeze", "desc": "Large waves, spray"}
-    if knots < 34: return {"f": 7, "name": "Near Gale", "desc": "Sea heaps up"}
-    if knots < 41: return {"f": 8, "name": "Gale", "desc": "High waves, breaking crests"}
-    if knots < 48: return {"f": 9, "name": "Strong Gale", "desc": "Visibility affected"}
-    if knots < 56: return {"f": 10, "name": "Storm", "desc": "Trees uprooted on land!"}
-    if knots < 64: return {"f": 11, "name": "Violent Storm", "desc": "Widespread damage"}
-    return {"f": 12, "name": "Hurricane", "desc": "Absolute devastation. Don't."}
+    # Lookup table: (Max Knots, Beaufort Scale, Name, Description)
+    BEAUFORT_TABLE = [
+        (1, 0, "Calm", "Mirror flat"),
+        (4, 1, "Light Air", "Ripples"),
+        (7, 2, "Light Breeze", "Small wavelets"),
+        (11, 3, "Gentle Breeze", "Large wavelets"),
+        (17, 4, "Moderate Breeze", "Small waves"),
+        (22, 5, "Fresh Breeze", "Many whitecaps"),
+        (28, 6, "Strong Breeze", "Large waves, spray"),
+        (34, 7, "Near Gale", "Sea heaps up"),
+        (41, 8, "Gale", "High waves, breaking crests"),
+        (48, 9, "Strong Gale", "Visibility affected"),
+        (56, 10, "Storm", "Trees uprooted"),
+        (64, 11, "Violent Storm", "Widespread damage"),
+        (float('inf'), 12, "Hurricane", "Absolute devastation. Don't.") # dont what
+    ]
+    for limit, f, name, desc in BEAUFORT_TABLE:
+        if knots < limit:
+            return {"f": f, "name": name, "desc": desc}
+
+def get_wind_color(knots):
+    """Maps wind speed to a UI color badge name."""
+    color_thresholds = [
+        (13, "light"), 
+        (19, "green"), 
+        (26, "sweet"), 
+        (36, "heavy"), 
+        (float('inf'), "nuke")
+    ]
+    return next(color for limit, color in color_thresholds if knots < limit)
 
 def get_relative_wind(wind_deg, shoreline_bearing):
     if shoreline_bearing is None: return "Unknown"
@@ -201,39 +230,24 @@ def get_weather_desc(code):
     return wmo_codes.get(code_int, f"Weather code {code_int}")
 
 def get_sendiness_score(wind_knots, wind_relative):
-    # Base score from wind speed logic remains the same...
-    if wind_knots < 8:    base = 1
-    elif wind_knots < 12: base = 3
-    elif wind_knots < 17: base = 5
-    elif wind_knots < 22: base = 6
-    elif wind_knots < 28: base = 8
-    elif wind_knots < 36: base = 9
-    else:                 base = 10
+    # Clean lookup for base score
+    thresholds = [(8, 1), (12, 3), (17, 5), (22, 6), (28, 8), (36, 9), (float('inf'), 10)]
+    base = next(score for limit, score in thresholds if wind_knots < limit)
 
-    # Direction quality modifier (NO EMOJIS HERE)
-    # Using simple string matching on the clean names from get_relative_wind
-    if wind_relative == "Cross-shore":
-        modifier = 1    # Perfect
-    elif wind_relative == "Cross-off":
-        modifier = 0.5  # Great for flat water, but riskier
-    elif wind_relative == "Cross-on":
-        modifier = 0    # Standard
-    elif wind_relative == "Onshore":
-        modifier = -0.5   # Harder to get out
-    elif wind_relative == "Offshore":
-        modifier = -0.5   # Dangerous for windsurfing
-    else:
-        modifier = 0
-
+    # Dictionary for modifiers
+    modifiers = {
+        "Cross-shore": 1,
+        "Cross-off": 0.5,
+        "Onshore": -0.5,
+        "Offshore": -0.5
+    }
+    modifier = modifiers.get(wind_relative, 0)
     score = max(1, min(10, base + modifier))
-    
-    # ... rest of your score labels (Stay Home, Send It, etc.)
-    if score <= 3:   label = "Stay Home"
-    elif score <= 5: label = "Marginal"
-    elif score <= 7: label = "Good Session"
-    elif score <= 9: label = "Send It"
-    else:            label = "NUKING 🔥"
 
+    # Clean lookup for labels
+    labels = [(3, "Stay Home"), (5, "Marginal"), (7, "Good Session"), (9, "Send It"), (float('inf'), "NUKING 🔥")]
+    label = next(text for limit, text in labels if score <= limit)
+    
     return score, label
 
 
@@ -456,27 +470,42 @@ def process_marine_data(marine, current_hour_idx):
 
 def get_demo_report(user_weight="75", level="intermediate", user_discipline="wave"):
     """Returns the hardcoded 'Nuking' report for demos."""
+    tz_name = 'Europe/London'
+    now_local = arrow.now(tz_name)
+    current_hour_idx = now_local.hour
     # Move your existing 'demo_epic' dictionary here
     demo_wind = 26.5
+    demo_waves = 2.5
     demo_relative = "💎 Cross-shore"
     weight_int = int(user_weight) if str(user_weight).isdigit() else 75
-    demo_gear = calculate_gear(weight_int, demo_wind, level, discipline=user_discipline)    
+    final_discipline = determine_discipline(user_discipline, demo_waves, demo_wind)
+    demo_gear = calculate_gear(weight_int, demo_wind, level, discipline=final_discipline)    
     demo_score, demo_label = get_sendiness_score(demo_wind, demo_relative)
     demo_session = {"start": "14:00", "avg_knots": 24.5}
     demo_wetsuit = get_wetsuit_rec(12)
+    demo_color = get_wind_color(demo_wind)
+    demo_beaufort = get_beaufort(demo_wind)
     
     # Mock 12h forecast for demo charts - more realistic wind pattern
     demo_forecast = []
     # Realistic afternoon wind pattern: builds, peaks, then drops
-    base_speeds = [24, 26, 28, 27, 25, 23, 21, 19, 17, 16, 15, 14]
+    base_speeds = [20, 22, 22, 24, 26, 28, 27, 25, 21, 19, 16, 14]
+
     for i, speed in enumerate(base_speeds):
+        display_hour = (current_hour_idx + i) % 24
         demo_forecast.append({
-            "hour": f"{(14 + i) % 24:02d}:00",
+            "hour": f"{display_hour:02d}:00",
             "speed": float(speed + (i % 3 - 1) * 0.5),  # Add slight variation
             "gust": float(speed + 5 + (i % 2)),  # Variable gust strength
             "code": 1 if i < 8 else 2  # Clear then partly cloudy
         })
     
+    # 3. Best Session Calculation
+    # Since the peak is at index 3, 4, 5, the start hour is now + 3 hours
+    best_start_hour = (current_hour_idx + 3) % 24
+    # (24+26+28) / 3 = 26.0 average
+    demo_session = {"start": f"{best_start_hour:02d}:00", "avg_knots": 26.0}
+
     return {
         "metadata": {
             "spot_name": "🌟 DEMO: Epic Peak",
@@ -496,17 +525,17 @@ def get_demo_report(user_weight="75", level="intermediate", user_discipline="wav
         },
         "live": {
             "wind_knots": demo_wind,
-            "wind_color": "sweet",
-            "beaufort_f": 6,
-            "beaufort_name": "Strong Breeze",
-            "beaufort_desc": "Large branches in motion; whistling in wires.",
+            "wind_color": demo_color,
+            "beaufort_f": demo_beaufort['f'],
+            "beaufort_name": demo_beaufort['name'],
+            "beaufort_desc": demo_beaufort['desc'],
             "wind_dir_name": "S-West",
             "wind_dir": 225,
             "wind_arrow": "↗️",
             "wind_relative": demo_relative,
             "wind_trend": "Building",
             "gusts_knots": 34.0,
-            "waves_m": 2.5,
+            "waves_m": demo_waves,
             "wave_period": 11.0,
             "wave_power": 34.4,
             "wave_power_desc": "Clean",
@@ -567,23 +596,15 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     trend_12h = process_forecast(weather.Hourly(), current_hour_idx, tz_name)
 
     # --- NEW: Identify Discipline BEFORE calculating gear ---
-    # Determine discipline: User Choice vs Data-Driven Fallback
-    if user_discipline == "auto":
-        if marine_data['height'] > 1.2 and wind_spd > 18:
-            final_discipline = "wave"
-        elif wind_spd > 15 and wind_spd < 25 and marine_data['height'] < 0.6:
-            final_discipline = "freestyle"
-        else:
-            final_discipline = "freeride"
-    else:
-        final_discipline = user_discipline
-
-# Now use final_discipline for gear and the rest of the report
+    
+    final_discipline = determine_discipline(user_discipline, marine_data['height'], wind_spd)
+    # Now use final_discipline for gear and the rest of the report
     
     # 5. Physics & Logic
     weight_int = int(user_weight) if user_weight.isdigit() else 75
     gear = calculate_gear(weight_int, wind_spd, level, discipline=final_discipline)    
     rel_wind = get_relative_wind(wind_deg, spot.get('shoreline_bearing'))
+    dir_info = get_compass_info(wind_deg)
     sendiness_score, sendiness_label = get_sendiness_score(safe_wind, rel_wind)
     beaufort = get_beaufort(wind_spd)
     best_session = get_best_session_window(trend_12h)
@@ -596,11 +617,7 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     else: wind_trend = "Steady"
     
     # Wind colour drives the UI badge colour
-    if wind_spd < 13: wind_color = "light"
-    elif wind_spd < 19: wind_color = "green"
-    elif wind_spd < 26: wind_color = "sweet"
-    elif wind_spd < 36: wind_color = "heavy"
-    else: wind_color = "nuke"
+    wind_color = get_wind_color(wind_spd)
 
     # 6. Sun Logic
     daily = weather.Daily()
@@ -614,8 +631,6 @@ async def get_shred_report(spot_key: str, user_weight: str = "75", level="interm
     else:
         diff = (sunset_time - now_local).total_seconds() / 3600
         sun_status = "✨ Golden Hour!" if diff < 1 else f"{int(diff)}h left" 
-    rel_wind = get_relative_wind(wind_deg, spot.get('shoreline_bearing'))
-    dir_info = get_compass_info(wind_deg)
 
     # --- 7. Local Knowledge ---
     wisdom = "No local knowledge found."
@@ -707,14 +722,17 @@ async def get_ai_recommendation(report, user_weight, spot_key, user_level, user_
             gear_fact = "N/A"
             vibe_mode = "Disappointed and salty. You are standing in the rain looking at a flat sea. You’re heading to the pub and telling others not to bother."
             mood = "Grumpy"
+            kit_instruction = "Do NOT recommend any windsurf kit. Instead, suggest the pub, a coffee, or a paddleboard."
         elif sendiness < 7.0:
             gear_fact = f"{gear.get('sail')} sail and {gear.get('board')} board"
             vibe_mode = "Chill and helpful. You just finished a decent session. You're leaning against your van, watching the water and giving tactical advice."
             mood = "Stoked"
+            kit_instruction = f"Strictly recommend the {gear_fact}. Tell them why this kit fits the {wind_knots}kt breeze."
         else:
             gear_fact = f"{gear.get('sail')} sail and {gear.get('board')} board"
             vibe_mode = "Hyped and direct! Conditions are epic/heavy. You're out of breath from an intense session and warning people it's a wild ride out there."
             mood = "Adrenaline-fueled"
+            kit_instruction = f"Strictly recommend the {gear_fact}. Tell them why this kit fits the {wind_knots}kt breeze."
 
        # 3. Nuanced Tide Logic
         has_tide = "0000" not in str(meta.get('tide_station_id', '')) and "unavailable" not in live.get('tide_display', '').lower()
@@ -780,12 +798,12 @@ async def get_ai_recommendation(report, user_weight, spot_key, user_level, user_
         MISSION:
         Write THE VIBE.
         1. Perspective: {vibe_mode}.
-        2. If gear is 'N/A', do NOT use those words. Instead, tell them to grab a paddleboard, go to the pub or take the day off.
-        3. STRICT: Explicitly recommend the {gear_fact}. Tell the rider why this kit fits the current {wind_knots}kt conditions and {session_label}.
+        2. {kit_instruction}
+        3. { "STRICT: Do NOT mention sail sizes or board volumes. Tell them to grab a paddleboard, go to the pub, or stay in bed." if sendiness < 3.5 else "STRICT: Explain why the " + gear_fact + " is the right call for " + session_label + "." }
         4. Include the Tide Fact: {tide_fact}.
         5. Mention one hazard from 'Spot Hazards'.
-        6. Use a "You should..." or "Rig the..." tone so the user knows exactly what to do.
-        7. STRICT: 3 sentences max.
+        6. Use a "You should..." or "I'm..." tone so the user knows exactly what the local vibe is.
+        7. STRICT: 3 sentences max. Do not include any introductory fluff like 'Here is the vibe'.
         """
 
         response = await client.chat.completions.create(

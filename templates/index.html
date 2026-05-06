@@ -13,26 +13,41 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { background-color: #f4f7f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        #map { height: 450px; border-radius: 15px; margin-bottom: 20px; border: 3px solid #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        
+        /* Responsive Map Height */
+        #map { 
+            height: 450px; 
+            border-radius: 15px; 
+            margin-bottom: 20px; 
+            border: 3px solid #fff; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
+            z-index: 1; /* Keep below dropdowns */
+        }
+        @media (max-width: 768px) { #map { height: 250px; } }
+
         .shred-card { border: none; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); background: white; }
-        .legend-box { border-left: 5px solid #ffc107; background-color: #fff9e6; border-radius: 8px; }
-        /* Wind Speed Colour Classes — matched to engine.py wind_color values */
-        .wind-light { color: #6c757d; }   /* < 13kts: grey, not worth it */
-        .wind-green { color: #198754; }   /* 13-18kts: good learning wind */
-        .wind-sweet { color: #0d6efd; }   /* 19-25kts: sweet spot */
-        .wind-heavy { color: #fd7e14; }   /* 26-35kts: heavy, advanced */
-        .wind-nuke  { color: #dc3545; }   /* 36kts+: nuking, experts only */
-        /* Hide the previous selection text when searching so it doesn't overlap */
-        .ts-wrapper.focus .ts-control .item {
-            display: none !important;
+        .legend-box { border-left: 5px solid #ffc107; background-color: #fff9e6; border-radius: 8px; transition: all 0.3s ease; }
+        
+        /* AI Thinking Pulse */
+        .vibe-loading {
+            animation: pulse 1.5s infinite;
+            opacity: 0.6;
         }
-        /* Ensure the search input is clear and takes up the full width */
-        .ts-wrapper.focus .ts-control input {
-            display: block !important;
-            opacity: 1 !important;
-            position: relative !important;
-            width: 100% !important;
+        @keyframes pulse {
+            0% { opacity: 0.4; }
+            50% { opacity: 0.8; }
+            100% { opacity: 0.4; }
         }
+
+        .wind-light { color: #6c757d; }
+        .wind-green { color: #198754; }
+        .wind-sweet { color: #0d6efd; }
+        .wind-heavy { color: #fd7e14; }
+        .wind-nuke  { color: #dc3545; }
+
+        /* TomSelect specific fixes */
+        .ts-wrapper .ts-control { border-radius: 8px !important; padding: 12px !important; }
+        .ts-dropdown { border-radius: 8px !important; box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important; }
     </style>
 </head>
 <body>
@@ -429,39 +444,40 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+<!-- 2. SCRIPTS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
-    // =========================================================
-    // SECTION 1: MAP
-    // =========================================================
-    const map = L.map('map').setView([52.5, -2.5], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
-
-    // Spot data is read from the hidden #spotbot-data element or the select options.
-    // We still need the spots object for map markers — read it from the select element.
-    const spotSelect = document.querySelector('select[name="spot"]');
-    const currentSpot = spotSelect ? spotSelect.value : '';
-
-    // Build spots map from the select options + data attributes on markers
-    // (spots lat/lon are embedded via data attributes below)
-    const spotMarkers = {};
-
-    // SECTION 1.5: DROPDOWN SNAP
-    // When user changes the dropdown, the map should move to that spot
-    const spotDropdown = document.querySelector('select[name="spot"]');
-    if (spotDropdown) {
-        spotDropdown.addEventListener('change', function(e) {
-            const selectedKey = e.target.value;
-            const marker = spotMarkers[selectedKey];
-            if (marker) {
-                map.setView(marker.getLatLng(), 12); // Zoom in
-                marker.openPopup();
+document.addEventListener('DOMContentLoaded', function () {
+    // 1. INITIALIZE TOM SELECT
+    let tsControl = null;
+    const spotSearchEl = document.querySelector('#spot-search');
+    if (spotSearchEl) {
+        tsControl = new TomSelect("#spot-search", {
+            create: false,
+            sortField: { field: "text", direction: "asc" },
+            placeholder: "Search for a spot...",
+            allowEmptyOption: true,
+            onFocus: function() { this.clear(); },
+            // FLY TO MAP ON SELECTION
+            onChange: function(value) {
+                if (value && spotMarkers[value]) {
+                    const marker = spotMarkers[value];
+                    map.setView(marker.getLatLng(), 12);
+                    marker.openPopup();
+                }
             }
         });
     }
-    // =========================================================
-    // SECTION 2: SPOT MARKERS
-    // Spots are rendered server-side into data attributes to avoid Jinja-in-JS issues.
-    // =========================================================
+
+    // 2. INITIALIZE MAP
+    const map = L.map('map').setView([52.5, -2.5], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+
+    const spotMarkers = {};
+
+    // 3. RENDER MARKERS
     document.querySelectorAll('.spot-marker-data').forEach(el => {
         const key = el.dataset.key;
         const lat = parseFloat(el.dataset.lat);
@@ -473,168 +489,137 @@
         spotMarkers[key] = marker;
 
         marker.on('click', () => {
-            const selectControl = document.querySelector('#spot-search').tomselect;
-            selectControl.setValue(key); // This tells Tom Select to update the UI
+            if(tsControl) tsControl.setValue(key); 
             map.setView([lat, lon], 11);
         });
     });
 
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentSpot = urlParams.get('spot');
     if (currentSpot && spotMarkers[currentSpot]) {
         const m = spotMarkers[currentSpot];
         map.setView(m.getLatLng(), 12);
         m.openPopup();
     }
 
-    // =========================================================
-    // SECTION 3: CHARTS
-    // Data is read from the hidden #spotbot-data div, not from inline Jinja.
-    // =========================================================
-    const dataEl = document.getElementById('spotbot-data');
+    // 4. CHARTS LOGIC (The "Deluxe" Version)
+const dataEl = document.getElementById('spotbot-data');
+if (dataEl) {
+    const windData = JSON.parse(dataEl.dataset.forecast || '[]');
+    const tideData = JSON.parse(dataEl.dataset.tides || '[]').slice(0, 8);
+    const bestSession = JSON.parse(dataEl.dataset.bestSession || 'null');
 
-    if (dataEl) {
-        const windData = JSON.parse(dataEl.dataset.forecast || '[]');
-        const tideData = JSON.parse(dataEl.dataset.tides || '[]').slice(0, 6);
-        const bestSession = JSON.parse(dataEl.dataset.bestSession || 'null');
-
-        // --- Wind Chart ---
-        // If a best session window exists, shade that region on the chart.
-        const windCtx = document.getElementById('windChart').getContext('2d');
-
-        // Build annotation plugin config for the best session highlight
-        let annotations = {};
-        if (bestSession && windData.length > 0) {
-            const startIdx = windData.findIndex(d => d.hour === bestSession.start);
-            if (startIdx !== -1) {
-                annotations.bestWindow = {
-                    type: 'box',
-                    xMin: startIdx,
-                    xMax: Math.min(startIdx + 2, windData.length - 1),
-                    backgroundColor: 'rgba(25, 135, 84, 0.1)',
-                    borderColor: 'rgba(25, 135, 84, 0.4)',
-                    borderWidth: 1,
-                    label: {
-                        display: true,
-                        content: `Best: ${bestSession.avg_knots}kts`,
-                        position: 'end',
-                        yAdjust: -20,
-                        color: '#198754',
-                        backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                        font: { size: 10, weight: 'bold' },
-                        padding: 4,
-                        borderRadius: 3
+    const windCtx = document.getElementById('windChart').getContext('2d');
+    let annotations = {};
+    if (bestSession && windData.length > 0) {
+        const startIdx = windData.findIndex(d => d.hour === bestSession.start);
+        if (startIdx !== -1) {
+            annotations.bestWindow = {
+                type: 'box',
+                xMin: startIdx - 0.4,
+                xMax: startIdx + 2.4,
+                backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                borderColor: 'rgba(25, 135, 84, 0.4)',
+                borderWidth: 1,
+                drawTime: 'beforeDatasetsDraw',
+                label: {
+                    display: true,
+                    // Array format creates two lines
+                    content: [
+                        "LEGEND'S PICK", 
+                        `${bestSession.avg_knots}kts (Avg)`
+                    ],
+                    position: 'center', // Centers the text block horizontally
+                    yAdjust: 20,        // Positive number moves it DOWN from the top
+                    textAlign: 'center',
+                    color: '#198754',
+                    font: { 
+                        size: 10, 
+                        weight: 'bold',
+                        lineHeight: 1.2 
                     }
-                };
-            }
+                }
+            };
         }
-
-        new Chart(windCtx, {
-            type: 'line',
-            data: {
-                labels: windData.map(d => d.hour),
-                datasets: [
-                    { label: 'Base Wind', data: windData.map(d => d.speed), borderColor: '#0d6efd', tension: 0.3, fill: false },
-                    { label: 'Gusts', data: windData.map(d => d.gust), borderColor: '#dc3545', borderDash: [5, 5], tension: 0.3, fill: false }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { intersect: false, mode: 'index' },
-                plugins: {
-                    legend: { position: 'bottom' },
-                    annotation: { annotations }
-                },
-                scales: { y: { beginAtZero: true, title: { display: true, text: 'Knots' } } }
-            }
-        });
-
-        // --- Tide Chart ---
-        const tideCtx = document.getElementById('tideChart').getContext('2d');
-        new Chart(tideCtx, {
-            type: 'line',
-            data: {
-                labels: tideData.map(t => t.time),
-                datasets: [{
-                    label: 'Height (m)',
-                    data: tideData.map(t => t.height),
-                    borderColor: '#0dcaf0',
-                    backgroundColor: 'rgba(13, 202, 240, 0.2)',
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: tideData.map(t => t.type.toUpperCase().includes('HIGH') ? '#0dcaf0' : '#fff'),
-                    pointRadius: 6
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { intersect: false, mode: 'index' },
-                plugins: { legend: { display: false } }
-            }
-        });
     }
 
-    // =========================================================
-    // SECTION 4: FORM LOADING STATE
-    // =========================================================
+    new Chart(windCtx, {
+        type: 'line',
+        data: {
+            labels: windData.map(d => d.hour),
+            datasets: [
+                { label: 'Wind', data: windData.map(d => d.speed), borderColor: '#0d6efd', tension: 0.3, fill: true, backgroundColor: 'rgba(13, 110, 253, 0.05)' },
+                { label: 'Gusts', data: windData.map(d => d.gust), borderColor: '#dc3545', borderDash: [5, 5], tension: 0.3 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' }, // RESTORED: Easier hovering
+            plugins: { 
+                legend: { position: 'bottom' },
+                annotation: { annotations: annotations }
+            },
+            scales: { y: { beginAtZero: true, title: { display: true, text: 'Knots', font: { size: 10 } } } }
+        }
+    });
+
+    const tideCtx = document.getElementById('tideChart').getContext('2d');
+    new Chart(tideCtx, {
+        type: 'line',
+        data: {
+            labels: tideData.map(t => t.time),
+            datasets: [{
+                label: 'Height (m)',
+                data: tideData.map(t => t.height),
+                borderColor: '#0dcaf0',
+                backgroundColor: 'rgba(13, 202, 240, 0.2)',
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: tideData.map(t => t.type.includes('High') ? '#0dcaf0' : '#fff'), // RESTORED: High tide highlights
+                pointRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: { legend: { display: false } }
+        }
+    });
+}
+
+    // 5. FORM LOADING STATE
     const spotForm = document.getElementById('spotForm');
     if (spotForm) {
         spotForm.onsubmit = () => {
+            const submitBtn = document.getElementById('submitBtn');
             const btnText = document.getElementById('btnText');
             const spinner = document.getElementById('spinner');
-            const submitBtn = document.getElementById('submitBtn');
-            if (btnText) btnText.innerText = "Consulting the Legend...";
-            if (spinner) spinner.classList.remove('d-none');
-            if (submitBtn) submitBtn.classList.add('disabled');
+            btnText.innerText = "Consulting the Legend...";
+            spinner.classList.remove('d-none');
+            submitBtn.classList.add('disabled');
         };
     }
 
-    // =========================================================
-    // SECTION 5: AI VIBE FETCH
-    // Fetches the Legend's advice after page load to avoid blocking the render.
-    // Passes spot, weight, AND level so the AI gets the full picture.
-    // =========================================================
-    document.addEventListener('DOMContentLoaded', function () {
+    // 6. AI VIBE FETCH
     const vibeDisplay = document.getElementById('vibeDisplay');
-    const urlParams = new URLSearchParams(window.location.search);
-    const spot = urlParams.get('spot');
-    const weight = urlParams.get('weight') || '75';
-    const level = urlParams.get('level') || 'intermediate';
-    const discipline = urlParams.get('discipline') || 'auto';
-
-    if (spot && vibeDisplay) {
-        // This fires immediately while maps and charts are still loading
-        fetch(`/api/vibe?spot=${spot}&weight=${weight}&level=${level}&discipline=${discipline}`)
+    if (currentSpot && vibeDisplay) {
+        vibeDisplay.classList.add('vibe-loading');
+        const weight = urlParams.get('weight') || '75';
+        const level = urlParams.get('level') || 'intermediate';
+        const discipline = urlParams.get('discipline') || 'auto';
+        fetch(`/api/vibe?spot=${currentSpot}&weight=${weight}&level=${level}&discipline=${discipline}`)
             .then(r => r.json())
             .then(data => {
+                vibeDisplay.classList.remove('vibe-loading');
                 vibeDisplay.style.whiteSpace = 'pre-line';
                 vibeDisplay.innerText = data.vibe;
             })
             .catch(() => { 
+                vibeDisplay.classList.remove('vibe-loading');
                 vibeDisplay.innerText = "The Legend is lost in the fog."; 
             });
-    }
-});
-</script>
-<script>
-    document.addEventListener("DOMContentLoaded", function() {
-    const TS = window.TomSelect || window.Tom; 
-    
-    if (TS) {
-        new TS("#spot-search", {
-            create: false,
-            sortField: { field: "text", direction: "asc" },
-            placeholder: "-- Type to search or click map --",
-            allowEmptyOption: true,
-            onDropdownOpen: function() {
-                this.clearSearch();
-                this.focus();
-            },
-            // When an item is selected, stop the blinking and close the box
-            onItemAdd: function() {
-                this.blur(); // Removes focus/cursor immediately
-            }
-        });
     }
 });
 </script>

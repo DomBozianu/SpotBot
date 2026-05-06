@@ -12,6 +12,10 @@ templates = Jinja2Templates(directory="templates")
 KB_PATH = Path(__file__).parent / "spotbot_knowledge" / "general" / "knowledge_base.json"
 with open(KB_PATH, "r") as f:
     KNOWLEDGE = json.load(f)
+REPORT_CACHE = {}
+
+sorted_spots = dict(sorted(SPOTS.items(), key=lambda item: item[1]['name']))
+
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -19,15 +23,24 @@ async def home(request: Request):
     weight = request.query_params.get("weight", "75")
     level = request.query_params.get("level", "intermediate")
     discipline = request.query_params.get("discipline", "auto")
-    if weight == "": weight = "75"
 
     report_data = None
     if spot_key:
         report_data = await get_shred_report(spot_key, weight, level, discipline)
         # AI vibe is fetched client-side via /api/vibe after page load for better UX
 
+        # --- CACHE MANAGEMENT ---
+        # If cache gets too big, clear the oldest entry (or just wipe it)
+        if len(REPORT_CACHE) > 100:
+            # Wipe the oldest item (Python 3.7+ dicts preserve order)
+            first_key = next(iter(REPORT_CACHE))
+            del REPORT_CACHE[first_key]
+            print(f"--- CACHE CLEANUP: Removed {first_key} ---")
+
+        cache_key = f"{spot_key}_{weight}_{level}_{discipline}"
+        REPORT_CACHE[cache_key] = report_data
+
     # Sort the spots alphabetically by their Name for the dropdown
-    sorted_spots = dict(sorted(SPOTS.items(), key=lambda item: item[1]['name']))
 
     return templates.TemplateResponse(
         request=request,
@@ -47,7 +60,15 @@ async def home(request: Request):
 @app.get("/api/vibe")
 async def get_vibe_api(spot: str, weight: str = "75", level: str = "intermediate", discipline: str = "auto"):
     try:
-        report_data = await get_shred_report(spot, weight, level, discipline)
+        cache_key = f"{spot}_{weight}_{level}_{discipline}"
+        
+        # Check if we already have this report in memory
+        if cache_key in REPORT_CACHE:
+            print("--- CACHE HIT: Reusing existing report for AI ---")
+            report_data = REPORT_CACHE[cache_key]
+        else:
+            # Fallback if the cache expired or was cleared
+            report_data = await get_shred_report(spot, weight, level, discipline)
         
         final_disc = report_data['live']['recommended_gear']['type']
 
