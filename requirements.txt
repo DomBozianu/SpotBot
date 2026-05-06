@@ -1,10 +1,12 @@
 fastapi
-uvicorn[standard]
+uvicorn
+gunicorn
 jinja2
 python-dotenv
 requests
 requests-cache
 retry-requests
-openmeteo-requests
+openmeteo_requests
 arrow
 openai
+numpy
