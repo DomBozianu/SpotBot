@@ -54,7 +54,7 @@
 
 <nav class="navbar navbar-dark bg-primary mb-4">
     <div class="container">
-        <a class="navbar-brand" href="/">🌊 <strong>SpotBot</strong> | <small>Local Wisdom Engine</small></a>
+        <a class="navbar-brand" href="/">🌊 <strong>Windsurf SpotBot</strong> | <small>Local Wisdom Engine</small></a>
     </div>
 </nav>
 
@@ -63,7 +63,7 @@
         <!-- LEFT COLUMN: MAP & INPUTS -->
         <div class="col-lg-5">
             <div id="map"></div>
-            <!-- Spot data for map markers — read by JS from data attributes, no Jinja inside <script> -->
+            <!-- Spot data for map markers -->
             {% for key, details in all_spots.items() %}
             <div class="spot-marker-data"
                 data-key="{{ key }}"
@@ -74,7 +74,6 @@
             {% endfor %}
             <div class="card shred-card p-4 mb-4">
                 <form id="spotForm" action="/" method="get">
-                    <!-- Spot Selection -->
                     <!-- Searchable Spot Selection -->
                     <div class="mb-3">
                         <label class="form-label fw-bold">Select Spot</label>
@@ -98,19 +97,19 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold">Skill Level</label>
                         <select name="level" class="form-select">
-                            <option value="novice" {% if user_level == 'novice' %}selected{% endif %}>Novice (Kook)</option>
-                            <option value="intermediate" {% if user_level == 'intermediate' %}selected{% endif %}>Intermediate (Crusher)</option>
-                            <option value="advanced" {% if user_level == 'advanced' %}selected{% endif %}>Advanced (Legend)</option>
+                            <option value="novice" {% if user_level == 'novice' %}selected{% endif %}>Novice</option>
+                            <option value="intermediate" {% if user_level == 'intermediate' %}selected{% endif %}>Intermediate</option>
+                            <option value="advanced" {% if user_level == 'advanced' %}selected{% endif %}>Advanced</option>
                         </select>
                     </div>
                     <!-- Discipline Dropdown -->
                     <div class="mb-3">
                         <label class="form-label fw-bold text-uppercase" style="font-size: 0.75rem;">Discipline</label>
                         <select name="discipline" class="form-select border-2 shadow-sm w-100" style="height: 48px;">
-                            <option value="auto" {% if request.query_params.get('discipline') == 'auto' or not request.query_params.get('discipline') %}selected{% endif %}>✨ Auto-Detect</option>
-                            <option value="freeride" {% if request.query_params.get('discipline') == 'freeride' %}selected{% endif %}>🚀 Freeride</option>
-                            <option value="wave" {% if request.query_params.get('discipline') == 'wave' %}selected{% endif %}>🌊 Wave</option>
-                            <option value="freestyle" {% if request.query_params.get('discipline') == 'freestyle' %}selected{% endif %}>🧬 Freestyle</option>
+                            <option value="auto" {% if request.query_params.get('discipline') == 'auto' or not request.query_params.get('discipline') %}selected{% endif %}>Auto-Detect from conditions</option>
+                            <option value="freeride" {% if request.query_params.get('discipline') == 'freeride' %}selected{% endif %}>Freeride</option>
+                            <option value="wave" {% if request.query_params.get('discipline') == 'wave' %}selected{% endif %}>Wave</option>
+                            <option value="freestyle" {% if request.query_params.get('discipline') == 'freestyle' %}selected{% endif %}>Freestyle</option>
                         </select>
                     </div>
                     <button type="submit" id="submitBtn" class="btn btn-primary btn-lg w-100">
@@ -130,9 +129,9 @@
                         <div>
                             <h2 class="display-6 fw-bold mb-0 text-white">{{ report.metadata.spot_name }}</h2>
                             <div class="d-flex gap-3 opacity-75 small">
-                                <span>📅 {{ report.metadata.date }}</span>
+                                <span>{{ report.metadata.date }}</span>
                                 <!-- Kept the specific timestamp here for accuracy -->
-                                <span>🕒 Last Update: {{ report.metadata.last_updated }}</span>
+                                <span>Last Update: {{ report.metadata.last_updated }}</span>
                             </div>
                         </div>
                         <div class="text-end">
@@ -250,9 +249,9 @@
                 <!-- AI VIBE SECTION -->
                 <div class="legend-box p-4 mb-4 bg-white border-start border-4 border-primary shadow-sm rounded">
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h5 class="fw-bold text-primary mb-0">🗨️ The Local Legend says:</h5>
+                        <h5 class="fw-bold text-primary mb-0">The Local Legend says:</h5>
                         <a href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#gearModal" class="btn btn-sm btn-outline-primary">
-                            ⚙️ Gear Guide
+                            Gear Guide
                         </a>
                     </div>
                     <p class="lead mb-0" id="vibeDisplay" style="font-style: italic;">
@@ -265,7 +264,7 @@
                     <canvas id="windChart"></canvas>
                 </div>
                 
-                <h6 class="fw-bold mt-4 mb-3">🌊 TIDAL CURVE (24H)</h6>
+                <h6 class="fw-bold mt-4 mb-3">TIDAL CURVE</h6>
                 <div style="height: 200px; width: 100%;">
                     <canvas id="tideChart"></canvas>
                 </div>
@@ -417,7 +416,7 @@
                 
                 <div class="p-3 bg-light border-top">
                     <small class="text-muted">
-                        <strong>Board Volume Guide:</strong> Novice = Weight + 40L | Intermediate = Weight + 30L | Advanced = Weight + 20L
+                        <strong>Rough Board Volume Guide:</strong> Novice = Weight + 40L | Intermediate = Weight + 30L | Advanced = Weight + 20L
                     </small>
                 </div>
             </div>
@@ -502,11 +501,11 @@ document.addEventListener('DOMContentLoaded', function () {
         m.openPopup();
     }
 
-    // 4. CHARTS LOGIC (The "Deluxe" Version)
+    // 4. CHARTS LOGIC 
 const dataEl = document.getElementById('spotbot-data');
 if (dataEl) {
     const windData = JSON.parse(dataEl.dataset.forecast || '[]');
-    const tideData = JSON.parse(dataEl.dataset.tides || '[]').slice(0, 8);
+    const tideData = JSON.parse(dataEl.dataset.tides || '[]');
     const bestSession = JSON.parse(dataEl.dataset.bestSession || 'null');
 
     const windCtx = document.getElementById('windChart').getContext('2d');
@@ -568,7 +567,7 @@ if (dataEl) {
     new Chart(tideCtx, {
         type: 'line',
         data: {
-            labels: tideData.map(t => t.time),
+            labels: tideData.map(t => [t.time, t.date]),
             datasets: [{
                 label: 'Height (m)',
                 data: tideData.map(t => t.height),
@@ -584,7 +583,27 @@ if (dataEl) {
             responsive: true,
             maintainAspectRatio: false,
             interaction: { intersect: false, mode: 'index' },
-            plugins: { legend: { display: false } }
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        // This ensures the tooltip also shows the date
+                        title: (tooltipItems) => {
+                            const item = tideData[tooltipItems[0].dataIndex];
+                            return `${item.type}: ${item.time} (${item.date})`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        font: { size: 9 }, // Slightly smaller font to fit the date
+                        maxRotation: 0,   // Keeps text horizontal
+                        autoSkip: false    // Ensures we see all 6 events
+                    }
+                }
+            }
         }
     });
 }
