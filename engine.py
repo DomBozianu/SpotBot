@@ -82,7 +82,7 @@ def calculate_gear(weight_kg, wind_speed_kts, skill_level="intermediate", discip
     reserve_map = {
         "novice": 100, 
         "intermediate": 40, 
-        "advanced": 15
+        "advanced": 20
     }
     reserve = reserve_map.get(skill_level, 40)
     
