@@ -42,14 +42,35 @@ def load_spots():
 SPOTS = load_spots()
 
 async def fetch_all_data(lat, lon, tide_id):
-    # Fetch weather, marine, and tides in parallel to save time.
+    # Fetch weather, marine, and tides in parallel to save time
     # Create tasks but don't 'await' them yet
     weather_task = asyncio.to_thread(fetch_spot_data, lat, lon)
     tide_task = asyncio.to_thread(fetch_tide_data, tide_id)
-    
-    # Run them simultaneously
-    (weather_res, marine_res), tides = await asyncio.gather(weather_task, tide_task)
-    return weather_res, marine_res, tides
+
+    try:
+        results = await asyncio.gather(
+            weather_task,
+            tide_task,
+            return_exceptions=True
+        )
+
+        weather_res = results[0]
+        tides = results[1]
+
+        # If weather_res is an exception or None, propagate failure
+        if isinstance(weather_res, Exception) or weather_res is None:
+            print(f"Weather API failed: {weather_res}")
+            return None, None, []
+
+        if isinstance(tides, Exception):
+            print(f"Tide API failed: {tides}")
+            tides = []
+
+        return weather_res[0], weather_res[1], tides
+
+    except Exception as e:
+        print(f"Error in fetch_all_data: {e}")
+        return None, None, []
 
 def calculate_gear(weight_kg, wind_speed_kts, skill_level="intermediate", discipline="freeride"):
     # Calculates gear with rig-weight adjusted sinker logic.
@@ -277,9 +298,22 @@ def fetch_spot_data(lat, lon):
         "timezone": "auto",
         "length_unit": "metric"
     }
-    weather_res = openmeteo.weather_api("https://api.open-meteo.com/v1/forecast", params=weather_params)[0]
-    marine_res = openmeteo.weather_api("https://marine-api.open-meteo.com/v1/marine", params=marine_params)[0]
-    return weather_res, marine_res
+    try:
+        weather_res = openmeteo.weather_api(
+            "https://api.open-meteo.com/v1/forecast",
+            params=weather_params
+        )[0]
+        marine_res = openmeteo.weather_api(
+            "https://marine-api.open-meteo.com/v1/marine",
+            params=marine_params
+        )[0]
+        return weather_res, marine_res
+    except openmeteo_requests.Client.OpenMeteoRequestsError as e:
+        print(f"Open-Meteo API Error: {e}")
+        return None, None  # Return None to indicate failure
+    except Exception as e:
+        print(f"Unexpected Error in fetch_spot_data: {e}")
+        return None, None
 
 def fetch_tide_data(station_id):
     # Fetches tide data
@@ -292,9 +326,19 @@ def fetch_tide_data(station_id):
     headers = {"Ocp-Apim-Subscription-Key": api_key}
     try:
         response = cache_session.get(url, headers=headers, timeout=5)
-        return response.json() if response.status_code == 200 else []
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Admiralty API Error: Status {response.status_code} - {response.text}")
+            return []
+    except requests.exceptions.Timeout:
+        print("Admiralty API Timeout")
+        return []
+    except requests.exceptions.RequestException as e:
+        print(f"Admiralty API Request Error: {e}")
+        return []
     except Exception as e:
-        print(f"Tide API Error: {e}")
+        print(f"Unexpected Admiralty API Error: {e}")
         return []
 
 def process_tides(tides, tz_name, now_local):

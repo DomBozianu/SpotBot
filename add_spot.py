@@ -100,7 +100,7 @@ def fuzzy_check_scout(user_input):
 async def discover_specific_spot(area_name):
     """Forcefully extracts clean beach names with no conversational fluff."""
     tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-    search = tavily.search(query=f"best windsurfing launch spots beaches in {area_name} Scotland", max_results=5)
+    search = tavily.search(query=f"best windsurfing launch spots beaches in {area_name}", max_results=5)
     
     client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.getenv("OPENROUTER_API_KEY"))
     
